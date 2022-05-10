@@ -14,3 +14,9 @@ def cosine(block_size: int, element: int, frequency: int, inverse: bool = False)
     return math.sqrt((1 + (frequency > 0)) / block_size) * math.cos(
         (2 * element + 1) * frequency * math.pi / (2 * block_size)
     )
+
+
+def discrete_cosine_transform_matrix(size: int, inverse: bool = False):
+    return torch.tensor(
+        [[cosine(size, element, frequency, inverse) for element in range(size)] for frequency in range(size)]
+    )

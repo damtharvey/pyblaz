@@ -18,9 +18,26 @@ def _test():
     x = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
     blocked = compressor.block(x)
     first_element, mean_slope, normalized_block = compressor.normalize(blocked[0, 0])
-    slope_indices = compressor.predict(normalized_block, mean_slope)
-    biggest, coefficients = compressor.block_transform(slope_indices)
-    print(coefficients)
+    print(normalized_block)
+
+    # slope_indices = compressor.predict(normalized_block, mean_slope)
+    # test_case_slope_indices = torch.tensor(
+    #     [
+    #         [125, 125, 125, 125, 125, 125, 125, 125],
+    #         [125, 143, 153, 162, 171, 180, 189, 198],
+    #         [125, 153, 162, 171, 180, 189, 198, 207],
+    #         [125, 162, 171, 180, 189, 198, 207, 217],
+    #         [125, 171, 180, 189, 198, 207, 217, 226],
+    #         [125, 180, 189, 198, 207, 217, 226, 235],
+    #         [125, 189, 198, 207, 217, 226, 235, 244],
+    #         [125, 198, 207, 217, 226, 235, 244, 253],
+    #     ],
+    #     dtype=dtype,
+    #     device=device,
+    # )
+    # scale, coefficients = compressor.block_transform(test_case_slope_indices)
+    # print(scale)
+    # print(coefficients)
 
 
 class Compressor:
@@ -69,14 +86,24 @@ class Compressor:
         :param block: a block of the input
         :return: Tuple of (the first element of the block, the mean slope, the normalized block)
         """
-        # TODO: Write for arbitrary dimensions. This is written explicitly for 2D.
-        differences = torch.zeros_like(block)
-        differences[0, 1:] = block[0, 1:] - block[0, :-1]
-        differences[1:, 0] = block[1:, 0] - block[:-1, 0]
-        differences[1:, 1:] = (2 * block[1:, 1:] - block[:-1, 1:] - block[1:, :-1]) / 2
+        differences = torch.zeros_like(block, dtype=self.dtype, device=self.device)
+        for dimension in range(self.n_dimensions):
+            exec(
+                f"differences[{'1:,' * dimension} 0, {'1:,' * (self.n_dimensions - dimension - 1)}] "
+                f"= block[{'1:,' * dimension} 0, {'1:,' * (self.n_dimensions - dimension - 1)}] "
+                f"- block[{':-1,' * dimension} 0, {':-1,' * (self.n_dimensions - dimension - 1)}]"
+            )
+
+        inner_string = "".join(
+            f" - block[{'1:,' * dimension} :-1, {'1:,' * (self.n_dimensions - dimension - 1)}]"
+            for dimension in range(self.n_dimensions)
+        )
+        exec(
+            f"differences[{'1:,' * self.n_dimensions}] "
+            f"= ({self.n_dimensions} * block[{'1:,' * self.n_dimensions}]{inner_string}) / {self.n_dimensions}"
+        )
 
         mean_slope = self.mean_slope(differences)
-
         return block[(0,) * self.n_dimensions], mean_slope, differences / mean_slope
 
     @staticmethod
@@ -126,11 +153,7 @@ class Compressor:
             key=lambda x: sum(x),
         )[:n_coefficients]
 
-        for element_indices in tqdm.tqdm(
-            itertools.product(*(range(size) for size in self.block_shape)),
-            desc="transformer",
-            total=n_coefficients,
-        ):
+        for element_indices in itertools.product(*(range(size) for size in self.block_shape)):
             for frequency_indices in all_frequency_indices:
                 transformer_tensor[(*element_indices, *frequency_indices)] = math.prod(
                     self.transform(size, element_index, frequency_index, inverse)
@@ -140,16 +163,16 @@ class Compressor:
                 )
 
         transformed = torch.einsum(
-            slope_indices.to(self.dtype),
+            slope_indices.to(self.dtype)
+            / slope_indices.abs().max(),  # Not in paper, but need it to get scale close to 20.
             range(self.n_dimensions),
             transformer_tensor,
             range(2 * self.n_dimensions),
             range(self.n_dimensions, 2 * self.n_dimensions),
         )
 
-        biggest_coefficient = transformed.norm(torch.inf)
-
-        return biggest_coefficient, (transformed * 127 / biggest_coefficient).to(torch.long)
+        scale = 127 / transformed.norm(torch.inf)
+        return scale, (transformed * scale).to(torch.long)
 
 
 if __name__ == "__main__":
