@@ -18,26 +18,13 @@ def _test():
     x = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
     blocked = compressor.block(x)
     first_element, mean_slope, normalized_block = compressor.normalize(blocked[0, 0])
-    print(normalized_block)
+    # print(normalized_block)
 
-    # slope_indices = compressor.predict(normalized_block, mean_slope)
-    # test_case_slope_indices = torch.tensor(
-    #     [
-    #         [125, 125, 125, 125, 125, 125, 125, 125],
-    #         [125, 143, 153, 162, 171, 180, 189, 198],
-    #         [125, 153, 162, 171, 180, 189, 198, 207],
-    #         [125, 162, 171, 180, 189, 198, 207, 217],
-    #         [125, 171, 180, 189, 198, 207, 217, 226],
-    #         [125, 180, 189, 198, 207, 217, 226, 235],
-    #         [125, 189, 198, 207, 217, 226, 235, 244],
-    #         [125, 198, 207, 217, 226, 235, 244, 253],
-    #     ],
-    #     dtype=dtype,
-    #     device=device,
-    # )
-    # scale, coefficients = compressor.block_transform(test_case_slope_indices)
-    # print(scale)
-    # print(coefficients)
+    coefficients = compressor.block_transform(normalized_block)
+    print(coefficients)
+    coefficient_indices = compressor.predict(coefficients, mean_slope)
+    print(coefficient_indices)
+    print(coefficient_indices - 127)
 
 
 class Compressor:
@@ -94,6 +81,7 @@ class Compressor:
                 f"- block[{':-1,' * dimension} 0, {':-1,' * (self.n_dimensions - dimension - 1)}]"
             )
 
+        # TODO This is still 2D.
         inner_string = "".join(
             f" - block[{'1:,' * dimension} :-1, {'1:,' * (self.n_dimensions - dimension - 1)}]"
             for dimension in range(self.n_dimensions)
@@ -130,7 +118,7 @@ class Compressor:
 
     def block_transform(
         self, slope_indices: torch.Tensor, n_coefficients: int = None, inverse=False
-    ) -> tuple[torch.float, torch.Tensor]:
+    ) -> torch.Tensor:
         """
         Section IId
 
@@ -163,16 +151,14 @@ class Compressor:
                 )
 
         transformed = torch.einsum(
-            slope_indices.to(self.dtype)
-            / slope_indices.abs().max(),  # Not in paper, but need it to get scale close to 20.
+            slope_indices.to(self.dtype),
             range(self.n_dimensions),
             transformer_tensor,
             range(2 * self.n_dimensions),
             range(self.n_dimensions, 2 * self.n_dimensions),
         )
 
-        scale = 127 / transformed.norm(torch.inf)
-        return scale, (transformed * scale).to(torch.long)
+        return transformed
 
 
 if __name__ == "__main__":
