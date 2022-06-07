@@ -9,40 +9,70 @@ import torch
 
 import transforms
 
-from scipy import fft
+
 
 def _test():
     dtype = torch.float64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     compressor = Compressor(dtype=dtype, device=device)
-    x = torch.tensor([[0.01 * x * y for y in range(16)] for x in range(8)], dtype=dtype, device=device)
+    x = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
+
+    '''----------------------------------------------------------------------------------------------------
+    -------------------------------------COMPRESSION-------------------------------------------------------
+    ----------------------------------------------------------------------------------------------------'''
+    #STEP 1: Blocking
     blocked = compressor.block(x)
-    first_element, mean_slope, normalized_block = compressor.normalize(blocked[0, 0])
-    print(blocked[0][0])
 
-    coefficients = compressor.block_transform(normalized_block)
-    #print(coefficients)
-    coefficient_indices, biggest_element = compressor.predict(coefficients, mean_slope)
-    #print(coefficient_indices - 127)
-    maximum_value = max(max(coefficient_indices, key=max))
-    
-    compressed_matrix = coefficient_indices - 127
-    added_back = compressed_matrix + 127
-    inverse_predict = compressor.unpredict(added_back, mean_slope, biggest_element)
-    #print((coefficients - inverse_predict).norm(torch.inf))
-    #print(inverse_predict)
-    inverse_DCT = compressor.block_transform(inverse_predict, inverse=True)
-    #print(inverse_DCT)
-    #print((normalized_block - inverse_DCT).norm(torch.inf))
+    for i in range(0,blocked[0].size()[0]):
 
-    inverse_normalized_part1 = inverse_DCT * mean_slope
-    #print(inverse_normalized_part1)
-    #print((blocked - inverse_normalized_part1).norm(torch.inf))
+        print(blocked[0, i])   #Printing the block so that we can compare it later with our output
 
-    inverse_normalized_part2 = compressor.unnormalized(inverse_normalized_part1, first_element)
-    print(inverse_normalized_part2)
-    #print((blocked - inverse_normalized_part2).norm(torch.inf))
+
+        #STEP 2: Normalization
+        first_element, mean_slope, normalized_block = compressor.normalize(blocked[0, i])
+
+
+        #STEP 3: DCT without quantization  
+        #In paper this step is performed as step 4. But as per our discussion over email, it is suitable to perform this step first.
+        #We do not perform quantization as once the DCT is performed it will not affect the output.
+        coefficients = compressor.block_transform(normalized_block)
+        #print(coefficients)
+
+
+
+        #STEP 4: Prediction
+        coefficient_indices, biggest_element = compressor.predict(coefficients, mean_slope)
+
+        #STEP 5: Most of the values in the paper were 0 and we were getting 127 over there.
+        #It seemed reasonable to subtract 127 from the output to obtain the final ocmpressed matrix
+        compressed_matrix = coefficient_indices - 127
+
+
+        '''-------------------------------------------------------------------------------------------------------
+        -------------------------------------DECOMPRESSION--------------------------------------------------------
+        -------------------------------------------------------------------------------------------------------'''
+        #In decompression we reverse the complete compression pipeline
+
+        #STEP -5: Adding back the value in the matrix that we subtarcted in step 5
+        added_back = compressed_matrix + 127
+
+        #STEP -4: Inverting back the prediction
+        inverse_predict = compressor.unpredict(added_back, mean_slope, biggest_element)
+        
+        #STEP -3: Inverse DCT
+        inverse_DCT = compressor.block_transform(inverse_predict, inverse=True)
+        
+        #STEP -2: Inverse normalized matrix part 1. Here we perform the inverse of slope and multiply back the slope in the matrix
+        inverse_normalized_part1 = inverse_DCT * mean_slope
+        
+        #STEP -1: Inverse matrix normalization.
+        # We add back the normalization performed in step 1, where we subtracted the values from the neighbors to obtain the normalized output
+        inverse_normalized_part2 = compressor.unnormalized(inverse_normalized_part1, first_element)
+        print(inverse_normalized_part2)
+        print((blocked - inverse_normalized_part2).norm(torch.inf))
+
+
 class Compressor:
     """
     blaz compressor as in https://arxiv.org/abs/2202.13007
@@ -68,7 +98,9 @@ class Compressor:
 
     def block(self, preimage: torch.Tensor) -> torch.Tensor:
         """
-        Section IIa
+        Section II.a 
+        
+        Block Splitting
 
         :param preimage: uncompressed tensor
         :return: tensor of shape blocks' shape followed by block shape.
@@ -84,7 +116,9 @@ class Compressor:
 
     def normalize(self, block: torch.Tensor) -> tuple[torch.float, torch.float, torch.Tensor]:
         """
-        Section IIb
+        Section II.b   
+        
+        Block Normalization
 
         :param block: a block of the input
         :return: Tuple of (the first element of the block, the mean slope, the normalized block)
@@ -112,9 +146,11 @@ class Compressor:
 
     def unnormalized(self, block: torch.Tensor, first_element: torch.float) -> torch.Tensor :
         """
-        Section inverse IIb
+        Section inverse II.(-b)
 
-        :param block: a block of the input
+        inverse of block normalization
+
+        :param block: a block of inverse predicted values
         :return: inverse of the normalized block
         """
         row, col = block.size()
@@ -139,7 +175,7 @@ class Compressor:
 
     def predict(self, normalized_block: torch.Tensor, mean_slope: torch.float) -> tuple[torch.Tensor, torch.float]:
         """
-        Section IIc
+        Section II.c
 
         :param normalized_block:
         :param mean_slope:
@@ -154,7 +190,16 @@ class Compressor:
             device=self.device,
         )
         return (normalized_block.unsqueeze(-1) - slopes).abs().min(-1).indices, biggest_element
-    def unpredict(self, predict_elements: torch.Tensor, mean_slope: torch.float, biggest_element) -> torch.Tensor:
+
+    def unpredict(self, predict_elements: torch.Tensor, mean_slope: torch.float, biggest_element: torch.float) -> torch.Tensor:
+        """
+        Section II.(-c)
+
+        :param predict_elements: (Indices of the bins)
+        :param mean_slope:
+        :param biggest_element
+        :return: Values corresponding to each indices
+        """
         slopes = torch.linspace(
             mean_slope - biggest_element,
             mean_slope + biggest_element,
@@ -167,7 +212,7 @@ class Compressor:
         self, slope_indices: torch.Tensor, n_coefficients: int = None, inverse=False
     ) -> torch.Tensor:
         """
-        Section IId
+        Section II.d
 
         :param slope_indices:
         :param n_coefficients:
@@ -197,7 +242,7 @@ class Compressor:
                     )
                 )
 
-        transformed = torch.einsum(    #multiplying elements of tensor
+        transformed = torch.einsum(              #multiplying elements of tensor
             slope_indices.to(self.dtype),
             range(self.n_dimensions),
             transformer_tensor,
