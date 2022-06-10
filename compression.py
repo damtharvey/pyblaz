@@ -21,18 +21,26 @@ def _test():
     # x = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
     a = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
     b = torch.tensor([[0.02 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
-    c = a + b
-
+    c_add = a + b
+    c_sub = a - b
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
 
-    compressed_c_maybe = compressor.blockwise(compressed_a, compressed_b, compressor.add_block)
+    compressed_c_maybe_add = compressor.blockwise(compressed_a, compressed_b, compressor.add_block)
 
-    c_hat = compressor.decompress(compressed_c_maybe)
+    c_hat_add = compressor.decompress(compressed_c_maybe_add)
+    print("\n\n\n******************Addition****************************")
+    print(c_add)
+    print(c_hat_add)
+    print((c_add - c_hat_add).norm(torch.inf))
 
-    print(c)
-    print(c_hat)
-    print((c - c_hat).norm(torch.inf))
+    compressed_c_maybe_sub = compressor.blockwise(compressed_a, compressed_b, compressor.sub_block)
+
+    c_hat_sub = compressor.decompress(compressed_c_maybe_sub)
+    print("\n\n\n******************Subtraction************************")
+    print(c_sub)
+    print(c_hat_sub)
+    print((c_sub - c_hat_sub).norm(torch.inf))
 
 
 class Compressor:
@@ -327,6 +335,33 @@ class Compressor:
 
         first_element = a.first_element + b.first_element
         mean_slope = a.mean_slope + b.mean_slope
+        biggest_element = a.biggest_element + b.biggest_element
+        indices = torch.zeros_like(a.indices, dtype=torch.int64)
+        for row_index in range(a.indices.shape[0]):
+            for column_index in range(a.indices.shape[1]):
+                if a.indices[row_index, column_index] + b.indices[row_index, column_index] == 0:
+                    indices[row_index, column_index] = 0
+                else:
+                    indices[row_index, column_index] = torch.div(
+                        a_indices[row_index, column_index] * b_indices[row_index, column_index],
+                        a_indices[row_index, column_index] + b_indices[row_index, column_index],
+                        rounding_mode="floor",
+                    )
+
+        return CompressedBlock(indices.type(self.index_dtype), first_element, mean_slope, biggest_element)
+
+    def sub_block(self, a: CompressedBlock, b: CompressedBlock) -> CompressedBlock:
+        """
+
+        :param a: compressed block
+        :param b: compressed block
+        :return: the compressed sum of a and b
+        """
+        a_indices = a.indices.type(torch.int64)
+        b_indices = b.indices.type(torch.int64)
+
+        first_element = a.first_element - b.first_element
+        mean_slope = a.mean_slope - b.mean_slope
         biggest_element = a.biggest_element + b.biggest_element
         indices = torch.zeros_like(a.indices, dtype=torch.int64)
         for row_index in range(a.indices.shape[0]):
