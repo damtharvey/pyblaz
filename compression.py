@@ -169,22 +169,21 @@ class Compressor:
         :return: Tuple of (the first element of the block, the mean slope, the normalized block)
         """
         differences = torch.zeros_like(block, dtype=self.dtype, device=self.device)
-        for dimension in range(self.n_dimensions):
-            exec(
-                f"differences[{'1:,' * dimension} 0, {'1:,' * (self.n_dimensions - dimension - 1)}] "
-                f"= block[{'1:,' * dimension} 0, {'1:,' * (self.n_dimensions - dimension - 1)}] "
-                f"- block[{':-1,' * dimension} 0, {':-1,' * (self.n_dimensions - dimension - 1)}]"
-            )
 
-        # TODO This is still 2D.
-        inner_string = "".join(
-            f" - block[{'1:,' * dimension} :-1, {'1:,' * (self.n_dimensions - dimension - 1)}]"
-            for dimension in range(self.n_dimensions)
-        )
-        exec(
-            f"differences[{'1:,' * self.n_dimensions}] "
-            f"= ({self.n_dimensions} * block[{'1:,' * self.n_dimensions}]{inner_string}) / {self.n_dimensions}"
-        )
+        for n_slice_indices in range(1, self.n_dimensions + 1):
+            for forward_slice_indices in itertools.combinations(range(self.n_dimensions), n_slice_indices):
+                assignee_index = ["1:" if index in forward_slice_indices else "0" for index in range(self.n_dimensions)]
+                assignee_index_str = ",".join(assignee_index)
+
+                for direction in forward_slice_indices:
+                    shifted_index = assignee_index.copy()
+                    shifted_index[direction] = ":-1"
+                    shifted_index_str = ",".join(shifted_index)
+                    exec(
+                        f"differences[{assignee_index_str}] += block[{assignee_index_str}] - block[{shifted_index_str}]"
+                    )
+
+                exec(f"differences[{assignee_index_str}] /= {n_slice_indices}")
 
         mean_slope = self.mean_slope(differences)
         return block[(0,) * self.n_dimensions], mean_slope, differences / mean_slope
