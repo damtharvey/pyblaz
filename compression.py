@@ -1,10 +1,11 @@
+from argparse import Namespace
+from calendar import c
 from collections import namedtuple
 import itertools
 import math
 from typing import overload
-
 import torch
-
+import functools
 import transforms
 
 CompressedBlock = namedtuple("CompressedBlock", ["indices", "first_element", "mean_slope", "biggest_element"])
@@ -23,24 +24,47 @@ def _test():
     b = torch.tensor([[0.02 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
     c_add = a + b
     c_sub = a - b
+    c_const_mul = 10 * a
+    
+    c_haramard_product = torch.mul(a, b)
+
+
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
 
-    compressed_c_maybe_add = compressor.blockwise(compressed_a, compressed_b, compressor.add_block)
+    compressed_c_maybe_add = compressor.blockwise_binary(compressed_a, compressed_b, compressor.add_block)
 
     c_hat_add = compressor.decompress(compressed_c_maybe_add)
-    print("\n\n\n******************Addition****************************")
+    print("\n\n\n*****************************************Addition*******************************************************")
     print(c_add)
     print(c_hat_add)
     print((c_add - c_hat_add).norm(torch.inf))
 
-    compressed_c_maybe_sub = compressor.blockwise(compressed_a, compressed_b, compressor.sub_block)
+    compressed_c_maybe_sub = compressor.blockwise_binary(compressed_a, compressed_b, compressor.sub_block)
 
     c_hat_sub = compressor.decompress(compressed_c_maybe_sub)
-    print("\n\n\n******************Subtraction************************")
+    print("\n\n\n****************************************Subtraction*****************************************************")
     print(c_sub)
     print(c_hat_sub)
     print((c_sub - c_hat_sub).norm(torch.inf))
+
+    compressed_c_maybe_const_mul = compressor.blockwise_unary(compressed_a, 10.0, compressor.const_mul_block)
+
+    c_hat_const_mul = compressor.decompress(compressed_c_maybe_const_mul)
+    print("\n\n\n****************************************Multiplication with constant*****************************************************")
+    print(c_const_mul)
+    print(c_hat_const_mul)
+    print((c_const_mul - c_hat_const_mul).norm(torch.inf))
+
+
+    
+    compressed_c_maybe_haramard_product = compressor.blockwise_binary(compressed_a, compressed_b, compressor.hardmard_block)
+
+    c_hat_haramard_product = compressor.decompress(compressed_c_maybe_haramard_product)
+    print("\n\n\n******************************************Hardamard product*********************************************")
+    print(c_haramard_product)
+    print(c_hat_haramard_product)
+    print((c_haramard_product - c_hat_haramard_product).norm(torch.inf))
 
 
 class Compressor:
@@ -354,7 +378,7 @@ class Compressor:
 
         :param a: compressed block
         :param b: compressed block
-        :return: the compressed sum of a and b
+        :retblockurn: the compressed sum of a and b
         """
         a_indices = a.indices.type(torch.int64)
         b_indices = b.indices.type(torch.int64)
@@ -376,8 +400,51 @@ class Compressor:
 
         return CompressedBlock(indices.type(self.index_dtype), first_element, mean_slope, biggest_element)
 
-    @overload
-    def blockwise(self, a: CompressedTensor, s: float, operation: callable) -> CompressedTensor:
+    def const_mul_block(self, a: CompressedBlock, c : float) -> CompressedBlock:
+        """
+
+        :param a: compressed block
+        :retblockurn: the compressed sum of a and b
+        """
+        a_indices = a.indices.type(torch.int64)
+        
+
+        first_element = a.first_element * c
+        mean_slope = a.mean_slope * c
+        biggest_element = a.biggest_element 
+        indices = torch.zeros_like(a.indices, dtype=torch.int64)
+        
+        return CompressedBlock(a_indices.type(self.index_dtype), first_element, mean_slope, biggest_element)
+
+    def hardmard_block(self, a: CompressedBlock, b: CompressedBlock) -> CompressedBlock:
+        """
+
+        :param a: compressed block
+        :param b: compressed block
+        :return: the compressed sum of a and b
+        """
+        a_indices = a.indices.type(torch.int64)
+        b_indices = b.indices.type(torch.int64)
+
+        first_element = a.first_element * b.first_element
+        mean_slope = a.mean_slope * b.mean_slope
+        biggest_element = a.biggest_element + b.biggest_element
+        indices = torch.zeros_like(a.indices, dtype=torch.int64)
+        for row_index in range(a.indices.shape[0]):
+            for column_index in range(a.indices.shape[1]):
+                if a.indices[row_index, column_index] + b.indices[row_index, column_index] == 0:
+                    indices[row_index, column_index] = 0
+                else:
+                    indices[row_index, column_index] = torch.div(
+                        a_indices[row_index, column_index] * b_indices[row_index, column_index],
+                        a_indices[row_index, column_index] + b_indices[row_index, column_index],
+                        rounding_mode="floor",
+                    )
+
+        return CompressedBlock(indices.type(self.index_dtype), first_element, mean_slope, biggest_element)
+
+    
+    def blockwise_unary(self, a: CompressedTensor, s: float, operation: callable) -> CompressedTensor:
         blocks_shape = a.indices.shape[: self.n_dimensions]
         indices = torch.zeros(a.indices.shape, dtype=self.index_dtype, device=self.device)
         first_elements = torch.zeros(blocks_shape, dtype=self.dtype, device=self.device)
@@ -401,8 +468,8 @@ class Compressor:
             )
 
         return CompressedTensor(indices, first_elements, mean_slopes, biggest_elements)
-
-    def blockwise(self, a: CompressedTensor, b: CompressedTensor, operation: callable) -> CompressedTensor:
+    
+    def blockwise_binary(self, a: CompressedTensor, b: CompressedTensor, operation: callable) -> CompressedTensor:
         blocks_shape = a.indices.shape[: self.n_dimensions]
         indices = torch.zeros(a.indices.shape, dtype=self.index_dtype, device=self.device)
         first_elements = torch.zeros(blocks_shape, dtype=self.dtype, device=self.device)
