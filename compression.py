@@ -21,61 +21,10 @@ def _test():
     # x = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
     a = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
     b = torch.tensor([[0.02 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
-    c_add = a + b
-    c_sub = a - b
-    c_const_mul = 10 * a
-    c_haramard_product = torch.mul(a, b)
-    c_dot_product = a@b
-
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
 
-    compressed_c_maybe_add = compressor.blockwise_binary(compressed_a, compressed_b, compressor.add_block)
-
-    c_hat_add = compressor.decompress(compressed_c_maybe_add)
-    print(
-        "\n\n\n*****************************************Addition*******************************************************"
-    )
-    print(c_add)
-    print(c_hat_add)
-    print((c_add - c_hat_add).norm(torch.inf))
-
-    compressed_c_maybe_sub = compressor.blockwise_binary(compressed_a, compressed_b, compressor.sub_block)
-
-    c_hat_sub = compressor.decompress(compressed_c_maybe_sub)
-    print(
-        "\n\n\n****************************************Subtraction*****************************************************"
-    )
-    print(c_sub)
-    print(c_hat_sub)
-    print((c_sub - c_hat_sub).norm(torch.inf))
-
-    compressed_c_maybe_const_mul = compressor.blockwise_unary(compressed_a, 10.0, compressor.const_mul_block)
-
-    c_hat_const_mul = compressor.decompress(compressed_c_maybe_const_mul)
-    print(
-        "\n\n\n****************************************Multiplication with constant*****************************************************"
-    )
-    print(c_const_mul)
-    print(c_hat_const_mul)
-    print((c_const_mul - c_hat_const_mul).norm(torch.inf))
-
-    compressed_c_maybe_haramard_product = compressor.blockwise_binary(
-        compressed_a, compressed_b, compressor.hadamard_block
-    )
-
-    c_hat_haramard_product = compressor.decompress(compressed_c_maybe_haramard_product)
-    print(
-        "\n\n\n******************************************Dot product*********************************************"
-    )
-    print(c_haramard_product)
-    print(c_hat_haramard_product)
-    print((c_haramard_product - c_hat_haramard_product).norm(torch.inf))
-
-
-    
-    c_hat_dot_product = compressor.partial_decompress(compressed_a, compressed_b)
-    
+    # partially_decompressed = compressor.partial_decompress(compressed_a, compressed_b)
 
 
 class Compressor:
@@ -145,24 +94,19 @@ class Compressor:
             )
         return self.block_inverse(decompressed)
 
-    def partial_decompress(self, a_compressed: CompressedTensor, b_compressed: CompressedTensor):
-        partial_decompressed_a = torch.zeros(a_compressed.indices.shape, dtype=self.dtype, device=self.device)
-        partial_decompressed_b = torch.zeros(b_compressed.indices.shape, dtype=self.dtype, device=self.device)
-        blocks_shape = partial_decompressed_a.shape[: self.n_dimensions]
-        for block_index in itertools.product(*(range(size) for size in blocks_shape)):
-            partial_decompressed_a[block_index], partial_decompressed_b[block_index] = self.partial_decompress_block(
-                a_compressed.indices[block_index],
-                a_compressed.first_elements[block_index],
-                a_compressed.mean_slopes[block_index],
-                a_compressed.biggest_elements[block_index],
-
-                b_compressed.indices[block_index],
-                b_compressed.first_elements[block_index],
-                b_compressed.mean_slopes[block_index],
-                b_compressed.biggest_elements[block_index],
-            )
-        return self.block_inverse(partial_decompressed_a, partial_decompressed_b)
-
+    # def partial_decompress(self, compressed: CompressedTensor):
+    #     decompressed = torch.zeros(compressed.indices.shape, dtype=self.dtype, device=self.device)
+    #     blocks_shape = decompressed.shape[: self.n_dimensions]
+    #     for block_index in itertools.product(*(range(size) for size in blocks_shape)):
+    #         decompressed[block_index] = self.partial_decompress_block(
+    #             CompressedBlock(
+    #                 compressed.indices[block_index],
+    #                 compressed.first_elements[block_index],
+    #                 compressed.mean_slopes[block_index],
+    #                 compressed.biggest_elements[block_index],
+    #             )
+    #         )
+    #     return self.block_inverse(decompressed)
 
     def compress_block(self, block) -> tuple[torch.Tensor, float, float, float]:
         first_element, mean_slope, normalized_block = self.normalize(block)
@@ -182,22 +126,35 @@ class Compressor:
             ),
         )
 
-    def partial_decompress_block(
-        self, indices_a: torch.Tensor, first_element_a: float, mean_slope_a: float, biggest_element_a: float,
-         indices_b: torch.Tensor, first_element_b: float, mean_slope_b: float, biggest_element_b: float
-    ) -> torch.Tensor:
-        return self.dot_product_normalize_inverse(
-            first_element_a, mean_slope_a,
-            self.block_transform(
-                self.predict_inverse(self.center_inverse(indices_a), mean_slope_a, biggest_element_a), inverse=True
-                ),
-            
-            first_element_b,
-            mean_slope_b,
-            self.block_transform(
-                self.predict_inverse(self.center_inverse(indices_b), mean_slope_b, biggest_element_b), inverse=True
-                ),
+    def partial_decompress_block(self, compressed: CompressedBlock) -> tuple[float, float, torch.Tensor, torch.Tensor]:
+        """
+        Perform inverse prediction, inverse transform, inverse normalize (Equation 12).
+        """
+        unpredicted_values = self.predict_inverse(
+            self.center_inverse(compressed.indices), compressed.mean_slope, compressed.biggest_element
         )
+        return (
+            compressed.first_element,
+            compressed.mean_slope,
+            unpredicted_values,  # B
+            self.block_transform(  # P
+                unpredicted_values,
+                inverse=True,
+            ),
+        )
+
+    def dot_product_block(
+        self,
+        a_first_element: float,
+        a_mean_slope: float,
+        a_unpredicted_values: torch.Tensor,
+        a_differences: torch.Tensor,
+        b_first_element: float,
+        b_mean_slope: float,
+        b_unpredicted_values: torch.Tensor,
+        b_differences: torch.Tensor,
+    ) -> float:
+        pass
 
     def block(self, preimage: torch.Tensor) -> torch.Tensor:
         """
@@ -259,12 +216,18 @@ class Compressor:
         mean_slope = self.mean_slope(differences)
         return block[(0,) * self.n_dimensions], mean_slope, differences / mean_slope
 
-    def dot_product_normalize_inverse(self, first_element_a: float, mean_slope_a: float, block_a: torch.Tensor, first_element_b: float, mean_slope_b: float, block_b: torch.Tensor)-> torch.Tensor:
-        #inverse_normalized_a = self.normalize_inverse(first_element_a, mean_slope_a, block_a)
-        #inverse_normalized_b = self.normalize_inverse(first_element_b, mean_slope_b, block_b)
+    def dot_product_normalize_inverse(
+        self,
+        first_element_a: float,
+        mean_slope_a: float,
+        block_a: torch.Tensor,
+        first_element_b: float,
+        mean_slope_b: float,
+        block_b: torch.Tensor,
+    ) -> torch.Tensor:
+        # inverse_normalized_a = self.normalize_inverse(first_element_a, mean_slope_a, block_a)
+        # inverse_normalized_b = self.normalize_inverse(first_element_b, mean_slope_b, block_b)
         inverse_normalized = torch.zeros(block_a.shape, dtype=self.index_dtype, device=self.device)
-        
-
 
     def normalize_inverse(self, first_element: float, mean_slope: float, block: torch.Tensor) -> torch.Tensor:
         """
@@ -420,7 +383,6 @@ class Compressor:
         :param b: compressed block
         :return: the compressed sum of a and b
         """
-        
 
         a_indices = a.indices.type(torch.int64)
         b_indices = b.indices.type(torch.int64)
