@@ -1,11 +1,10 @@
-from argparse import Namespace
-from calendar import c
 from collections import namedtuple
 import itertools
 import math
-from typing import overload
+
 import torch
-import functools
+import numpy as np
+
 import transforms
 
 CompressedBlock = namedtuple("CompressedBlock", ["indices", "first_element", "mean_slope", "biggest_element"])
@@ -25,9 +24,8 @@ def _test():
     c_add = a + b
     c_sub = a - b
     c_const_mul = 10 * a
-    
-    c_haramard_product = torch.mul(a, b)
 
+    c_haramard_product = torch.mul(a, b)
 
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
@@ -35,7 +33,9 @@ def _test():
     compressed_c_maybe_add = compressor.blockwise_binary(compressed_a, compressed_b, compressor.add_block)
 
     c_hat_add = compressor.decompress(compressed_c_maybe_add)
-    print("\n\n\n*****************************************Addition*******************************************************")
+    print(
+        "\n\n\n*****************************************Addition*******************************************************"
+    )
     print(c_add)
     print(c_hat_add)
     print((c_add - c_hat_add).norm(torch.inf))
@@ -43,7 +43,9 @@ def _test():
     compressed_c_maybe_sub = compressor.blockwise_binary(compressed_a, compressed_b, compressor.sub_block)
 
     c_hat_sub = compressor.decompress(compressed_c_maybe_sub)
-    print("\n\n\n****************************************Subtraction*****************************************************")
+    print(
+        "\n\n\n****************************************Subtraction*****************************************************"
+    )
     print(c_sub)
     print(c_hat_sub)
     print((c_sub - c_hat_sub).norm(torch.inf))
@@ -51,17 +53,21 @@ def _test():
     compressed_c_maybe_const_mul = compressor.blockwise_unary(compressed_a, 10.0, compressor.const_mul_block)
 
     c_hat_const_mul = compressor.decompress(compressed_c_maybe_const_mul)
-    print("\n\n\n****************************************Multiplication with constant*****************************************************")
+    print(
+        "\n\n\n****************************************Multiplication with constant*****************************************************"
+    )
     print(c_const_mul)
     print(c_hat_const_mul)
     print((c_const_mul - c_hat_const_mul).norm(torch.inf))
 
-
-    
-    compressed_c_maybe_haramard_product = compressor.blockwise_binary(compressed_a, compressed_b, compressor.hardmard_block)
+    compressed_c_maybe_haramard_product = compressor.blockwise_binary(
+        compressed_a, compressed_b, compressor.hadamard_block
+    )
 
     c_hat_haramard_product = compressor.decompress(compressed_c_maybe_haramard_product)
-    print("\n\n\n******************************************Hardamard product*********************************************")
+    print(
+        "\n\n\n******************************************Hardamard product*********************************************"
+    )
     print(c_haramard_product)
     print(c_hat_haramard_product)
     print((c_haramard_product - c_hat_haramard_product).norm(torch.inf))
@@ -195,11 +201,11 @@ class Compressor:
         differences = torch.zeros_like(block, dtype=self.dtype, device=self.device)
 
         for n_slice_indices in range(1, self.n_dimensions + 1):
-            for forward_slice_indices in itertools.combinations(range(self.n_dimensions), n_slice_indices):
-                assignee_index = ["1:" if index in forward_slice_indices else "0" for index in range(self.n_dimensions)]
+            for slice_directions in itertools.combinations(range(self.n_dimensions), n_slice_indices):
+                assignee_index = ["1:" if index in slice_directions else "0" for index in range(self.n_dimensions)]
                 assignee_index_str = ",".join(assignee_index)
 
-                for direction in forward_slice_indices:
+                for direction in slice_directions:
                     shifted_index = assignee_index.copy()
                     shifted_index[direction] = ":-1"
                     shifted_index_str = ",".join(shifted_index)
@@ -223,25 +229,38 @@ class Compressor:
         :param block: a block of inverse predicted values
         :return: inverse of the normalized block
         """
+        unnormalized = (mean_slope * block).cpu()
+        # The first element of the normalized block should be 0.
+        # We can replace it with the first element in the unnormalized tensor.
+        unnormalized[(0,) * self.n_dimensions] = first_element
 
-        # TODO don't be hacky
-        new_array = torch.zeros_like(block)
-        block_array = mean_slope * block
-        row, col = self.block_shape
-        for x in range(row):
-            for y in range(col):
-                if x == 0 and y == 0:
-                    new_array[x][y] = first_element
-                elif x == 0 and y != 0:
-                    new_array[x][y] = block_array[x][y] + new_array[x][y - 1]
-                elif x != 0 and y == 0:
-                    new_array[x][y] = block_array[x][y] + new_array[x - 1][y]
-                else:
-                    new_array[x][y] = (
-                        (block_array[x][y] + new_array[x - 1][y]) + (block_array[x][y] + new_array[x][y - 1])
-                    ) / 2
+        for n_slice_indices in range(1, self.n_dimensions + 1):
+            for slice_directions in itertools.combinations(range(self.n_dimensions), n_slice_indices):
+                for _, index_group in itertools.groupby(
+                    itertools.product(
+                        *(
+                            range(1, size) if direction in slice_directions else (0,)
+                            for direction, size in enumerate(unnormalized.shape)
+                        )
+                    ),
+                    key=lambda x: sum(x),
+                ):
+                    assignee_indices = np.array(tuple(index_group))
+                    assignee_indices_str = ",".join(
+                        f"assignee_indices[:, {dimension}]" for dimension in range(self.n_dimensions)
+                    )
 
-        return new_array
+                    for direction in slice_directions:
+                        adjacent_indices = assignee_indices.copy().T
+                        adjacent_indices[direction] -= 1
+                        unnormalized[eval(assignee_indices_str)] += (
+                            torch.take(
+                                unnormalized, torch.tensor(np.ravel_multi_index(adjacent_indices, self.block_shape))
+                            )
+                            / n_slice_indices
+                        )
+
+        return unnormalized.to(self.device)
 
     @staticmethod
     def mean_slope(block: torch.Tensor) -> torch.float:
@@ -285,7 +304,7 @@ class Compressor:
         )
         return slopes[indices.type(torch.int64)]
 
-    def center(self, slope_indices):
+    def center(self, slope_indices: torch.Tensor) -> torch.Tensor:
         """
         This adjustment follows binning and is not explicitly stated in the paper.
         We apply this adjustment trying to get closer results to the examples in the paper.
@@ -295,7 +314,7 @@ class Compressor:
         """
         return slope_indices - self.n_bins // 2 + 1
 
-    def center_inverse(self, centered_slope_indices):
+    def center_inverse(self, centered_slope_indices: torch.Tensor) -> torch.Tensor:
         """
         Adjust slope indices to be non-negative.
 
@@ -353,70 +372,65 @@ class Compressor:
         :param b: compressed block
         :return: the compressed sum of a and b
         """
+        # a_indices = a.indices.type(torch.int64)
+        # b_indices = b.indices.type(torch.int64)
+        #
+        # first_element = a.first_element + b.first_element
+        # mean_slope = a.mean_slope + b.mean_slope
+        # biggest_element = a.biggest_element + b.biggest_element
+        # indices = torch.zeros_like(a.indices, dtype=torch.int64)
+        # for row_index in range(a.indices.shape[0]):
+        #     for column_index in range(a.indices.shape[1]):
+        #         if a.indices[row_index, column_index] + b.indices[row_index, column_index] == 0:
+        #             indices[row_index, column_index] = 0
+        #         else:
+        #             indices[row_index, column_index] = torch.div(
+        #                 a_indices[row_index, column_index] * b_indices[row_index, column_index],
+        #                 a_indices[row_index, column_index] + b_indices[row_index, column_index],
+        #                 rounding_mode="floor",
+        #             )
+
         a_indices = a.indices.type(torch.int64)
         b_indices = b.indices.type(torch.int64)
 
-        first_element = a.first_element + b.first_element
-        mean_slope = a.mean_slope + b.mean_slope
-        biggest_element = a.biggest_element + b.biggest_element
         indices = torch.zeros_like(a.indices, dtype=torch.int64)
-        for row_index in range(a.indices.shape[0]):
-            for column_index in range(a.indices.shape[1]):
-                if a.indices[row_index, column_index] + b.indices[row_index, column_index] == 0:
-                    indices[row_index, column_index] = 0
-                else:
-                    indices[row_index, column_index] = torch.div(
-                        a_indices[row_index, column_index] * b_indices[row_index, column_index],
-                        a_indices[row_index, column_index] + b_indices[row_index, column_index],
-                        rounding_mode="floor",
-                    )
+        where_can_divide = a_indices + b_indices != 0
+        indices[where_can_divide] = torch.div(
+            a_indices[where_can_divide] * b_indices[where_can_divide],
+            a_indices[where_can_divide] + b_indices[where_can_divide],
+            rounding_mode="floor",
+        )
 
-        return CompressedBlock(indices.type(self.index_dtype), first_element, mean_slope, biggest_element)
+        return CompressedBlock(
+            indices.type(self.index_dtype),
+            a.first_element + b.first_element,
+            a.mean_slope + b.mean_slope,
+            a.biggest_element + b.biggest_element,
+        )
+
+    @staticmethod
+    def negate_block(block: CompressedBlock) -> CompressedBlock:
+        return CompressedBlock(block.indices, -block.first_element, -block.mean_slope, block.biggest_element)
 
     def sub_block(self, a: CompressedBlock, b: CompressedBlock) -> CompressedBlock:
         """
 
         :param a: compressed block
         :param b: compressed block
-        :retblockurn: the compressed sum of a and b
+        :return: the compressed sum of a and b
         """
-        a_indices = a.indices.type(torch.int64)
-        b_indices = b.indices.type(torch.int64)
+        return self.add_block(a, self.negate_block(b))
 
-        first_element = a.first_element - b.first_element
-        mean_slope = a.mean_slope - b.mean_slope
-        biggest_element = a.biggest_element + b.biggest_element
-        indices = torch.zeros_like(a.indices, dtype=torch.int64)
-        for row_index in range(a.indices.shape[0]):
-            for column_index in range(a.indices.shape[1]):
-                if a.indices[row_index, column_index] + b.indices[row_index, column_index] == 0:
-                    indices[row_index, column_index] = 0
-                else:
-                    indices[row_index, column_index] = torch.div(
-                        a_indices[row_index, column_index] * b_indices[row_index, column_index],
-                        a_indices[row_index, column_index] + b_indices[row_index, column_index],
-                        rounding_mode="floor",
-                    )
-
-        return CompressedBlock(indices.type(self.index_dtype), first_element, mean_slope, biggest_element)
-
-    def const_mul_block(self, a: CompressedBlock, c : float) -> CompressedBlock:
+    def const_mul_block(self, a: CompressedBlock, c: float) -> CompressedBlock:
         """
 
         :param a: compressed block
-        :retblockurn: the compressed sum of a and b
+        :param c: scalar
+        :return: the compressed sum of a and b
         """
-        a_indices = a.indices.type(torch.int64)
-        
+        return CompressedBlock(a.indices, a.first_element * c, a.mean_slope * c, a.biggest_element)
 
-        first_element = a.first_element * c
-        mean_slope = a.mean_slope * c
-        biggest_element = a.biggest_element 
-        indices = torch.zeros_like(a.indices, dtype=torch.int64)
-        
-        return CompressedBlock(a_indices.type(self.index_dtype), first_element, mean_slope, biggest_element)
-
-    def hardmard_block(self, a: CompressedBlock, b: CompressedBlock) -> CompressedBlock:
+    def hadamard_block(self, a: CompressedBlock, b: CompressedBlock) -> CompressedBlock:
         """
 
         :param a: compressed block
@@ -443,7 +457,6 @@ class Compressor:
 
         return CompressedBlock(indices.type(self.index_dtype), first_element, mean_slope, biggest_element)
 
-    
     def blockwise_unary(self, a: CompressedTensor, s: float, operation: callable) -> CompressedTensor:
         blocks_shape = a.indices.shape[: self.n_dimensions]
         indices = torch.zeros(a.indices.shape, dtype=self.index_dtype, device=self.device)
@@ -468,7 +481,7 @@ class Compressor:
             )
 
         return CompressedTensor(indices, first_elements, mean_slopes, biggest_elements)
-    
+
     def blockwise_binary(self, a: CompressedTensor, b: CompressedTensor, operation: callable) -> CompressedTensor:
         blocks_shape = a.indices.shape[: self.n_dimensions]
         indices = torch.zeros(a.indices.shape, dtype=self.index_dtype, device=self.device)
