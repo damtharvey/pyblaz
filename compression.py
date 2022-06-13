@@ -153,8 +153,30 @@ class Compressor:
         b_mean_slope: float,
         b_unpredicted_values: torch.Tensor,
         b_differences: torch.Tensor,
+        row: int,  #row of first tensor
+        column: int  #column of second tensor
     ) -> float:
-        pass
+        r = 0.0
+        B1 = torch.zeros(a_differences.shape, dtype=self.index_dtype, device=self.device)
+        B2 = torch.zeros(b_differences.shape, dtype=self.index_dtype, device=self.device)
+
+        for row_index in range(a_differences.size()):
+            for col_index in range(a_differences.size()[0]):
+                if row_index == 0 and col_index == 0:
+                    B1[row_index,col_index] = a_first_element
+                    B2[row_index,col_index] = b_first_element
+                elif row_index == 0 and col_index != 0:
+                    B1[row_index,col_index] = a_unpredicted_values[0,col_index-1] + a_mean_slope*a_differences[0,col_index-1]
+                    B2[row_index,col_index] = b_unpredicted_values[0,col_index-1] + b_mean_slope*b_differences[0,col_index-1]
+                elif row_index != 0 and col_index == 0:
+                    B1[row_index,col_index] = a_unpredicted_values[row_index-1,0] + a_mean_slope*a_differences[row_index-1,0]
+                    B2[row_index,col_index] = b_unpredicted_values[row_index-1,0] + b_mean_slope*b_differences[row_index-1,0]
+                else:
+                    B1[row_index,col_index] = (a_unpredicted_values[row_index-1,col_index] + a_unpredicted_values[row_index, col_index-1])/2 + a_mean_slope*a_differences[row_index-1,col_index-1]
+                    B2[row_index,col_index] = (b_unpredicted_values[row_index-1,col_index] + b_unpredicted_values[row_index, col_index-1])/2 + b_mean_slope*b_differences[row_index-1,col_index-1]
+        for k in range(0,8):
+            r = r + B1[row,k]*B2[k,column]
+        return r                   
 
     def block(self, preimage: torch.Tensor) -> torch.Tensor:
         """
