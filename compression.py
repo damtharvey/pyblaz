@@ -24,8 +24,8 @@ def _test():
     c_add = a + b
     c_sub = a - b
     c_const_mul = 10 * a
-
     c_haramard_product = torch.mul(a, b)
+    c_dot_product = a@b
 
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
@@ -66,11 +66,16 @@ def _test():
 
     c_hat_haramard_product = compressor.decompress(compressed_c_maybe_haramard_product)
     print(
-        "\n\n\n******************************************Hardamard product*********************************************"
+        "\n\n\n******************************************Dot product*********************************************"
     )
     print(c_haramard_product)
     print(c_hat_haramard_product)
     print((c_haramard_product - c_hat_haramard_product).norm(torch.inf))
+
+
+    
+    c_hat_dot_product = compressor.partial_decompress(compressed_a, compressed_b)
+    
 
 
 class Compressor:
@@ -140,6 +145,25 @@ class Compressor:
             )
         return self.block_inverse(decompressed)
 
+    def partial_decompress(self, a_compressed: CompressedTensor, b_compressed: CompressedTensor):
+        partial_decompressed_a = torch.zeros(a_compressed.indices.shape, dtype=self.dtype, device=self.device)
+        partial_decompressed_b = torch.zeros(b_compressed.indices.shape, dtype=self.dtype, device=self.device)
+        blocks_shape = partial_decompressed_a.shape[: self.n_dimensions]
+        for block_index in itertools.product(*(range(size) for size in blocks_shape)):
+            partial_decompressed_a[block_index], partial_decompressed_b[block_index] = self.partial_decompress_block(
+                a_compressed.indices[block_index],
+                a_compressed.first_elements[block_index],
+                a_compressed.mean_slopes[block_index],
+                a_compressed.biggest_elements[block_index],
+
+                b_compressed.indices[block_index],
+                b_compressed.first_elements[block_index],
+                b_compressed.mean_slopes[block_index],
+                b_compressed.biggest_elements[block_index],
+            )
+        return self.block_inverse(partial_decompressed_a, partial_decompressed_b)
+
+
     def compress_block(self, block) -> tuple[torch.Tensor, float, float, float]:
         first_element, mean_slope, normalized_block = self.normalize(block)
         coefficient_indices, biggest_element = self.predict(self.block_transform(normalized_block), mean_slope)
@@ -156,6 +180,23 @@ class Compressor:
             self.block_transform(
                 self.predict_inverse(self.center_inverse(indices), mean_slope, biggest_element), inverse=True
             ),
+        )
+
+    def partial_decompress_block(
+        self, indices_a: torch.Tensor, first_element_a: float, mean_slope_a: float, biggest_element_a: float,
+         indices_b: torch.Tensor, first_element_b: float, mean_slope_b: float, biggest_element_b: float
+    ) -> torch.Tensor:
+        return self.dot_product_normalize_inverse(
+            first_element_a, mean_slope_a,
+            self.block_transform(
+                self.predict_inverse(self.center_inverse(indices_a), mean_slope_a, biggest_element_a), inverse=True
+                ),
+            
+            first_element_b,
+            mean_slope_b,
+            self.block_transform(
+                self.predict_inverse(self.center_inverse(indices_b), mean_slope_b, biggest_element_b), inverse=True
+                ),
         )
 
     def block(self, preimage: torch.Tensor) -> torch.Tensor:
@@ -217,6 +258,13 @@ class Compressor:
 
         mean_slope = self.mean_slope(differences)
         return block[(0,) * self.n_dimensions], mean_slope, differences / mean_slope
+
+    def dot_product_normalize_inverse(self, first_element_a: float, mean_slope_a: float, block_a: torch.Tensor, first_element_b: float, mean_slope_b: float, block_b: torch.Tensor)-> torch.Tensor:
+        #inverse_normalized_a = self.normalize_inverse(first_element_a, mean_slope_a, block_a)
+        #inverse_normalized_b = self.normalize_inverse(first_element_b, mean_slope_b, block_b)
+        inverse_normalized = torch.zeros(block_a.shape, dtype=self.index_dtype, device=self.device)
+        
+
 
     def normalize_inverse(self, first_element: float, mean_slope: float, block: torch.Tensor) -> torch.Tensor:
         """
@@ -372,23 +420,7 @@ class Compressor:
         :param b: compressed block
         :return: the compressed sum of a and b
         """
-        # a_indices = a.indices.type(torch.int64)
-        # b_indices = b.indices.type(torch.int64)
-        #
-        # first_element = a.first_element + b.first_element
-        # mean_slope = a.mean_slope + b.mean_slope
-        # biggest_element = a.biggest_element + b.biggest_element
-        # indices = torch.zeros_like(a.indices, dtype=torch.int64)
-        # for row_index in range(a.indices.shape[0]):
-        #     for column_index in range(a.indices.shape[1]):
-        #         if a.indices[row_index, column_index] + b.indices[row_index, column_index] == 0:
-        #             indices[row_index, column_index] = 0
-        #         else:
-        #             indices[row_index, column_index] = torch.div(
-        #                 a_indices[row_index, column_index] * b_indices[row_index, column_index],
-        #                 a_indices[row_index, column_index] + b_indices[row_index, column_index],
-        #                 rounding_mode="floor",
-        #             )
+        
 
         a_indices = a.indices.type(torch.int64)
         b_indices = b.indices.type(torch.int64)
@@ -444,16 +476,12 @@ class Compressor:
         mean_slope = a.mean_slope * b.mean_slope
         biggest_element = a.biggest_element + b.biggest_element
         indices = torch.zeros_like(a.indices, dtype=torch.int64)
-        for row_index in range(a.indices.shape[0]):
-            for column_index in range(a.indices.shape[1]):
-                if a.indices[row_index, column_index] + b.indices[row_index, column_index] == 0:
-                    indices[row_index, column_index] = 0
-                else:
-                    indices[row_index, column_index] = torch.div(
-                        a_indices[row_index, column_index] * b_indices[row_index, column_index],
-                        a_indices[row_index, column_index] + b_indices[row_index, column_index],
-                        rounding_mode="floor",
-                    )
+        where_can_divide = a_indices + b_indices != 0
+        indices[where_can_divide] = torch.div(
+            a_indices[where_can_divide] * b_indices[where_can_divide],
+            a_indices[where_can_divide] + b_indices[where_can_divide],
+            rounding_mode="floor",
+        )
 
         return CompressedBlock(indices.type(self.index_dtype), first_element, mean_slope, biggest_element)
 
