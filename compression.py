@@ -17,10 +17,18 @@ def _test():
 
     compressor = Compressor(dtype=dtype, device=device)
     # x = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
-    a = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
-    b = torch.tensor([[0.02 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
+    a = torch.tensor([[0.01 * x * y for y in range(16)] for x in range(16)], dtype=dtype, device=device)
+    b = torch.tensor([[0.02 * x * y for y in range(16)] for x in range(16)], dtype=dtype, device=device)
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
+
+    row = 0
+    column = 7
+
+    # assert 2D
+
+    # (0, 0), (0, 1) in a
+    # (0, 1), (1, 1) in b
 
     some_a_block = CompressedBlock(
         compressed_a.indices[0, 0],
