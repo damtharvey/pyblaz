@@ -6,6 +6,8 @@ import torch
 import numpy as np
 
 import transforms
+import functools
+import operator
 
 CompressedBlock = namedtuple("CompressedBlock", ["indices", "first_element", "mean_slope", "biggest_element"])
 CompressedTensor = namedtuple("CompressedTensor", ["indices", "first_elements", "mean_slopes", "biggest_elements"])
@@ -16,37 +18,47 @@ def _test():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     compressor = Compressor(dtype=dtype, device=device)
+    dim1 = 16
+    dim2 = 16
     # x = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
-    a = torch.tensor([[0.01 * x * y for y in range(16)] for x in range(16)], dtype=dtype, device=device)
-    b = torch.tensor([[0.02 * x * y for y in range(16)] for x in range(16)], dtype=dtype, device=device)
+    a = torch.tensor([[0.01 * x * y for y in range(dim2)] for x in range(dim1)], dtype=dtype, device=device)
+    b = torch.tensor([[0.01 * x * y for y in range(dim2)] for x in range(dim1)], dtype=dtype, device=device)
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
+    num_blocks_rowwise = math.floor(dim1/8)
+    num_blocks_colwise = math.floor(dim2/8)
+   
+    type_of_blocks = [[x,y] for x in range(0,num_blocks_colwise) for y in range(0,num_blocks_rowwise)] #row major format
+    
+    row = 5 
+    col = 9 
+    blocks_for_a = [type_of_blocks[i] for i in range(0,len(type_of_blocks)) if type_of_blocks[i][0] == math.floor(row/8)]
+    blocks_for_b = [type_of_blocks[i] for i in range(0,len(type_of_blocks)) if type_of_blocks[i][1] == math.floor(col/8)]
+    decompressed_dot_product = 0.0
+    print(blocks_for_a)
+    print(blocks_for_b)
+    for i in range(0,len(blocks_for_a)):
+        print(i)
+        some_a_block = CompressedBlock(
+            compressed_a.indices[blocks_for_a[i][0], blocks_for_a[i][1]],
+            compressed_a.first_elements[blocks_for_a[i][0], blocks_for_a[i][1]],
+            compressed_a.mean_slopes[blocks_for_a[i][0], blocks_for_a[i][1]],
+            compressed_a.biggest_elements[blocks_for_a[i][0], blocks_for_a[i][1]],
+        )
+        some_b_block = CompressedBlock(
+            compressed_b.indices[blocks_for_b[i][0], blocks_for_b[i][1]],
+            compressed_b.first_elements[blocks_for_b[i][0], blocks_for_b[i][1]],
+            compressed_b.mean_slopes[blocks_for_b[i][0], blocks_for_b[i][1]],
+            compressed_b.biggest_elements[blocks_for_b[i][0], blocks_for_b[i][1]],
+        )
 
-    row = 0
-    column = 7
-
-    # assert 2D
-
-    # (0, 0), (0, 1) in a
-    # (0, 1), (1, 1) in b
-
-    some_a_block = CompressedBlock(
-        compressed_a.indices[0, 0],
-        compressed_a.first_elements[0, 0],
-        compressed_a.mean_slopes[0, 0],
-        compressed_a.biggest_elements[0, 0],
-    )
-    some_b_block = CompressedBlock(
-        compressed_b.indices[0, 0],
-        compressed_b.first_elements[0, 0],
-        compressed_b.mean_slopes[0, 0],
-        compressed_b.biggest_elements[0, 0],
-    )
-
-    dot_6_7 = a[6] @ b[:, 7]
-    print(dot_6_7)
-    print(compressor.dot_product_block(some_a_block, some_b_block, 6, 7))
-
+        
+        decompressed_dot_product += compressor.dot_product_block(some_a_block, some_b_block, row%8, col%8)
+        
+    dot_row_col = a[row] @ b[:, col]
+    print(dot_row_col)
+    print(decompressed_dot_product)
+    print(decompressed_dot_product - dot_row_col)
 
 class Compressor:
     """
