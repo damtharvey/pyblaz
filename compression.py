@@ -1,4 +1,3 @@
-from collections import namedtuple
 import itertools
 import math
 
@@ -6,11 +5,7 @@ import torch
 import numpy as np
 
 import transforms
-import functools
-import operator
-
-CompressedBlock = namedtuple("CompressedBlock", ["indices", "first_element", "mean_slope", "biggest_element"])
-CompressedTensor = namedtuple("CompressedTensor", ["indices", "first_elements", "mean_slopes", "biggest_elements"])
+from compressed import CompressedBlock, CompressedTensor
 
 
 def _test():
@@ -18,47 +13,17 @@ def _test():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     compressor = Compressor(dtype=dtype, device=device)
-    dim1 = 16
-    dim2 = 16
-    # x = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
-    a = torch.tensor([[0.01 * x * y for y in range(dim2)] for x in range(dim1)], dtype=dtype, device=device)
-    b = torch.tensor([[0.01 * x * y for y in range(dim2)] for x in range(dim1)], dtype=dtype, device=device)
-    compressed_a = compressor.compress(a)
-    compressed_b = compressor.compress(b)
-    num_blocks_rowwise = math.floor(dim1/8)
-    num_blocks_colwise = math.floor(dim2/8)
-   
-    type_of_blocks = [[x,y] for x in range(0,num_blocks_colwise) for y in range(0,num_blocks_rowwise)] #row major format
-    
-    row = 5 
-    col = 9 
-    blocks_for_a = [type_of_blocks[i] for i in range(0,len(type_of_blocks)) if type_of_blocks[i][0] == math.floor(row/8)]
-    blocks_for_b = [type_of_blocks[i] for i in range(0,len(type_of_blocks)) if type_of_blocks[i][1] == math.floor(col/8)]
-    decompressed_dot_product = 0.0
-    print(blocks_for_a)
-    print(blocks_for_b)
-    for i in range(0,len(blocks_for_a)):
-        print(i)
-        some_a_block = CompressedBlock(
-            compressed_a.indices[blocks_for_a[i][0], blocks_for_a[i][1]],
-            compressed_a.first_elements[blocks_for_a[i][0], blocks_for_a[i][1]],
-            compressed_a.mean_slopes[blocks_for_a[i][0], blocks_for_a[i][1]],
-            compressed_a.biggest_elements[blocks_for_a[i][0], blocks_for_a[i][1]],
-        )
-        some_b_block = CompressedBlock(
-            compressed_b.indices[blocks_for_b[i][0], blocks_for_b[i][1]],
-            compressed_b.first_elements[blocks_for_b[i][0], blocks_for_b[i][1]],
-            compressed_b.mean_slopes[blocks_for_b[i][0], blocks_for_b[i][1]],
-            compressed_b.biggest_elements[blocks_for_b[i][0], blocks_for_b[i][1]],
-        )
+    a = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
+    # b = torch.tensor([[0.02 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
 
-        
-        decompressed_dot_product += compressor.dot_product_block(some_a_block, some_b_block, row%8, col%8)
-        
-    dot_row_col = a[row] @ b[:, col]
-    print(dot_row_col)
-    print(decompressed_dot_product)
-    print(decompressed_dot_product - dot_row_col)
+    compressed_a = compressor.compress(a)
+    # compressed_b = compressor.compress(b)
+    decompressed_product = compressor.decompress(compressed_a * 2)
+
+    print(a * 2)
+    print(decompressed_product)
+    print(((a * 2) - decompressed_product).norm(torch.inf))
+
 
 class Compressor:
     """
@@ -80,12 +45,12 @@ class Compressor:
         self.dtype = dtype
         self.device = device
 
-        self.block_first_elements = None
-        self.block_mean_slopes = None
+        self.n_coefficients = None
+        self.transformer_tensor = None
 
         if self.n_bins <= 1 << 8:
             self.index_dtype = torch.int8
-        elif self.n_bins <= 1 << 16:
+        elif self.n_bins <= 1 << 1:
             self.index_dtype = torch.int16
         elif self.n_bins <= 1 << 32:
             self.index_dtype = torch.int32
@@ -97,44 +62,22 @@ class Compressor:
     def compress(self, tensor: torch.Tensor) -> CompressedTensor:
         blocked = self.block(tensor)
         blocks_shape = blocked.shape[: self.n_dimensions]
-        indices = torch.zeros(blocked.shape, dtype=self.index_dtype, device=self.device)
-        first_elements = torch.zeros(blocks_shape, dtype=self.dtype, device=self.device)
-        mean_slopes = torch.zeros(blocks_shape, dtype=self.dtype, device=self.device)
-        biggest_elements = torch.zeros(blocks_shape, dtype=self.dtype, device=self.device)
-
+        blocks = np.ndarray(blocks_shape, dtype=object)
         for block_index in itertools.product(*(range(size) for size in blocks_shape)):
-            (
-                indices[block_index],
-                first_elements[block_index],
-                mean_slopes[block_index],
-                biggest_elements[block_index],
-            ) = self.compress_block(blocked[block_index])
+            blocks[block_index] = self.compress_block(blocked[block_index])
+        return CompressedTensor(blocks)
 
-        return CompressedTensor(indices, first_elements, mean_slopes, biggest_elements)
+    def decompress(self, compressed: CompressedTensor):
+        blocked = torch.empty(compressed.blocks_shape + self.block_shape, dtype=self.dtype, device=self.device)
+        for block_index in itertools.product(*(range(size) for size in compressed.blocks_shape)):
+            blocked[block_index] = self.decompress_block(compressed[block_index])
+        return self.block_inverse(blocked)
 
-    def decompress(
-        self,
-        compressed: CompressedTensor,
-    ):
-        decompressed = torch.zeros(compressed.indices.shape, dtype=self.dtype, device=self.device)
-        blocks_shape = decompressed.shape[: self.n_dimensions]
-        for block_index in itertools.product(*(range(size) for size in blocks_shape)):
-            decompressed[block_index] = self.decompress_block(
-                CompressedBlock(
-                    compressed.indices[block_index],
-                    compressed.first_elements[block_index],
-                    compressed.mean_slopes[block_index],
-                    compressed.biggest_elements[block_index],
-                )
-            )
-        return self.block_inverse(decompressed)
-
-    def compress_block(self, block: torch.Tensor) -> tuple[torch.Tensor, float, float, float]:
+    def compress_block(self, block: torch.Tensor) -> CompressedBlock:
         first_element, mean_slope, normalized_block = self.normalize(block)
         coefficient_indices, biggest_element = self.predict(self.block_transform(normalized_block), mean_slope)
         centered = self.center(coefficient_indices)
-        stuff = centered.type(self.index_dtype), first_element, mean_slope, biggest_element
-        return stuff
+        return CompressedBlock(centered.type(self.index_dtype), first_element, mean_slope, biggest_element)
 
     def decompress_block(self, block: CompressedBlock) -> torch.Tensor:
         return self.normalize_inverse(
@@ -220,7 +163,7 @@ class Compressor:
         :param block: a block of inverse predicted values
         :return: inverse of the normalized block
         """
-        unnormalized = (mean_slope * block).cpu()
+        unnormalized = (mean_slope * block).cpu()  # TODO: Consider leaving this on the GPU.
         # The first element of the normalized block should be 0.
         # We can replace it with the first element in the unnormalized tensor.
         unnormalized[(0,) * self.n_dimensions] = first_element
@@ -326,161 +269,37 @@ class Compressor:
         if not n_coefficients:
             n_coefficients = math.prod(self.block_shape)
 
-        transformer_tensor = torch.zeros(
-            *self.block_shape * 2,
-            dtype=self.dtype,
-            device=self.device,
-        )
+        if not self.n_coefficients or self.n_coefficients != n_coefficients:
+            transformer_tensor = torch.zeros(
+                *self.block_shape * 2,
+                dtype=self.dtype,
+                device=self.device,
+            )
 
-        all_frequency_indices = sorted(
-            itertools.product(*(range(size) for size in self.block_shape)),
-            key=lambda x: sum(x),
-        )[:n_coefficients]
+            all_frequency_indices = sorted(
+                itertools.product(*(range(size) for size in self.block_shape)),
+                key=lambda x: sum(x),
+            )[:n_coefficients]
 
-        for element_indices in itertools.product(*(range(size) for size in self.block_shape)):
-            for frequency_indices in all_frequency_indices:
-                transformer_tensor[(*element_indices, *frequency_indices)] = math.prod(
-                    self.transform(size, element_index, frequency_index, inverse)
-                    for size, element_index, frequency_index in zip(
-                        self.block_shape, element_indices, frequency_indices
+            for element_indices in itertools.product(*(range(size) for size in self.block_shape)):
+                for frequency_indices in all_frequency_indices:
+                    transformer_tensor[(*element_indices, *frequency_indices)] = math.prod(
+                        self.transform(size, element_index, frequency_index, inverse)
+                        for size, element_index, frequency_index in zip(
+                            self.block_shape, element_indices, frequency_indices
+                        )
                     )
-                )
+            self.transformer_tensor = transformer_tensor
 
         transformed = torch.einsum(  # multiplying elements of tensor
             slope_indices.to(self.dtype),
             range(self.n_dimensions),
-            transformer_tensor,
+            self.transformer_tensor,
             range(2 * self.n_dimensions),
             range(self.n_dimensions, 2 * self.n_dimensions),
         )
 
         return transformed
-
-    def add_block(self, a: CompressedBlock, b: CompressedBlock) -> CompressedBlock:
-        """
-
-        :param a: compressed block
-        :param b: compressed block
-        :return: the compressed sum of a and b
-        """
-
-        a_indices = a.indices.type(torch.int64)
-        b_indices = b.indices.type(torch.int64)
-
-        indices = torch.zeros_like(a.indices, dtype=torch.int64)
-        where_can_divide = a_indices + b_indices != 0
-        indices[where_can_divide] = torch.div(
-            a_indices[where_can_divide] * b_indices[where_can_divide],
-            a_indices[where_can_divide] + b_indices[where_can_divide],
-            rounding_mode="floor",
-        )
-
-        return CompressedBlock(
-            indices.type(self.index_dtype),
-            a.first_element + b.first_element,
-            a.mean_slope + b.mean_slope,
-            a.biggest_element + b.biggest_element,
-        )
-
-    @staticmethod
-    def negate_block(block: CompressedBlock) -> CompressedBlock:
-        return CompressedBlock(block.indices, -block.first_element, -block.mean_slope, block.biggest_element)
-
-    def sub_block(self, a: CompressedBlock, b: CompressedBlock) -> CompressedBlock:
-        """
-
-        :param a: compressed block
-        :param b: compressed block
-        :return: the compressed sum of a and b
-        """
-        return self.add_block(a, self.negate_block(b))
-
-    def const_mul_block(self, a: CompressedBlock, c: float) -> CompressedBlock:
-        """
-
-        :param a: compressed block
-        :param c: scalar
-        :return: the compressed sum of a and b
-        """
-        return CompressedBlock(a.indices, a.first_element * c, a.mean_slope * c, a.biggest_element)
-
-    def hadamard_block(self, a: CompressedBlock, b: CompressedBlock) -> CompressedBlock:
-        """
-
-        :param a: compressed block
-        :param b: compressed block
-        :return: the compressed sum of a and b
-        """
-        a_indices = a.indices.type(torch.int64)
-        b_indices = b.indices.type(torch.int64)
-
-        first_element = a.first_element * b.first_element
-        mean_slope = a.mean_slope * b.mean_slope
-        biggest_element = a.biggest_element + b.biggest_element
-        indices = torch.zeros_like(a.indices, dtype=torch.int64)
-        where_can_divide = a_indices + b_indices != 0
-        indices[where_can_divide] = torch.div(
-            a_indices[where_can_divide] * b_indices[where_can_divide],
-            a_indices[where_can_divide] + b_indices[where_can_divide],
-            rounding_mode="floor",
-        )
-
-        return CompressedBlock(indices.type(self.index_dtype), first_element, mean_slope, biggest_element)
-
-    def blockwise_unary(self, a: CompressedTensor, s: float, operation: callable) -> CompressedTensor:
-        blocks_shape = a.indices.shape[: self.n_dimensions]
-        indices = torch.zeros(a.indices.shape, dtype=self.index_dtype, device=self.device)
-        first_elements = torch.zeros(blocks_shape, dtype=self.dtype, device=self.device)
-        mean_slopes = torch.zeros(blocks_shape, dtype=self.dtype, device=self.device)
-        biggest_elements = torch.zeros(blocks_shape, dtype=self.dtype, device=self.device)
-
-        for block_index in itertools.product(*(range(size) for size in blocks_shape)):
-            (
-                indices[block_index],
-                first_elements[block_index],
-                mean_slopes[block_index],
-                biggest_elements[block_index],
-            ) = operation(
-                CompressedBlock(
-                    a.indices[block_index],
-                    a.first_elements[block_index],
-                    a.mean_slopes[block_index],
-                    a.biggest_elements[block_index],
-                ),
-                s,
-            )
-
-        return CompressedTensor(indices, first_elements, mean_slopes, biggest_elements)
-
-    def blockwise_binary(self, a: CompressedTensor, b: CompressedTensor, operation: callable) -> CompressedTensor:
-        blocks_shape = a.indices.shape[: self.n_dimensions]
-        indices = torch.zeros(a.indices.shape, dtype=self.index_dtype, device=self.device)
-        first_elements = torch.zeros(blocks_shape, dtype=self.dtype, device=self.device)
-        mean_slopes = torch.zeros(blocks_shape, dtype=self.dtype, device=self.device)
-        biggest_elements = torch.zeros(blocks_shape, dtype=self.dtype, device=self.device)
-
-        for block_index in itertools.product(*(range(size) for size in blocks_shape)):
-            (
-                indices[block_index],
-                first_elements[block_index],
-                mean_slopes[block_index],
-                biggest_elements[block_index],
-            ) = operation(
-                CompressedBlock(
-                    a.indices[block_index],
-                    a.first_elements[block_index],
-                    a.mean_slopes[block_index],
-                    a.biggest_elements[block_index],
-                ),
-                CompressedBlock(
-                    b.indices[block_index],
-                    b.first_elements[block_index],
-                    b.mean_slopes[block_index],
-                    b.biggest_elements[block_index],
-                ),
-            )
-
-        return CompressedTensor(indices, first_elements, mean_slopes, biggest_elements)
 
 
 if __name__ == "__main__":
