@@ -127,7 +127,7 @@ class Compressor:
         )
 
     def dot_product_block(self, a: CompressedBlock, b: CompressedBlock, row: int, column: int) -> float:
-        return self.decompress_block(a)[row] @ self.decompress_block(b)[column]
+        return self.decompress_block(a)[row] @ self.decompress_block(b)[:, column]
 
     def block(self, preimage: torch.Tensor) -> torch.Tensor:
         """
