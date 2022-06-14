@@ -12,8 +12,6 @@ CompressedTensor = namedtuple("CompressedTensor", ["indices", "first_elements", 
 
 
 def _test():
-    import tqdm
-
     dtype = torch.float64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -24,7 +22,22 @@ def _test():
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
 
-    # partially_decompressed = compressor.partial_decompress(compressed_a, compressed_b)
+    some_a_block = CompressedBlock(
+        compressed_a.indices[0, 0],
+        compressed_a.first_elements[0, 0],
+        compressed_a.mean_slopes[0, 0],
+        compressed_a.biggest_elements[0, 0],
+    )
+    some_b_block = CompressedBlock(
+        compressed_b.indices[0, 0],
+        compressed_b.first_elements[0, 0],
+        compressed_b.mean_slopes[0, 0],
+        compressed_b.biggest_elements[0, 0],
+    )
+
+    dot_6_7 = a[6] @ b[:, 7]
+    print(dot_6_7)
+    print(compressor.dot_product_block(some_a_block, some_b_block, 6, 7))
 
 
 class Compressor:
@@ -87,96 +100,34 @@ class Compressor:
         blocks_shape = decompressed.shape[: self.n_dimensions]
         for block_index in itertools.product(*(range(size) for size in blocks_shape)):
             decompressed[block_index] = self.decompress_block(
-                compressed.indices[block_index],
-                compressed.first_elements[block_index],
-                compressed.mean_slopes[block_index],
-                compressed.biggest_elements[block_index],
+                CompressedBlock(
+                    compressed.indices[block_index],
+                    compressed.first_elements[block_index],
+                    compressed.mean_slopes[block_index],
+                    compressed.biggest_elements[block_index],
+                )
             )
         return self.block_inverse(decompressed)
 
-    # def partial_decompress(self, compressed: CompressedTensor):
-    #     decompressed = torch.zeros(compressed.indices.shape, dtype=self.dtype, device=self.device)
-    #     blocks_shape = decompressed.shape[: self.n_dimensions]
-    #     for block_index in itertools.product(*(range(size) for size in blocks_shape)):
-    #         decompressed[block_index] = self.partial_decompress_block(
-    #             CompressedBlock(
-    #                 compressed.indices[block_index],
-    #                 compressed.first_elements[block_index],
-    #                 compressed.mean_slopes[block_index],
-    #                 compressed.biggest_elements[block_index],
-    #             )
-    #         )
-    #     return self.block_inverse(decompressed)
-
-    def compress_block(self, block) -> tuple[torch.Tensor, float, float, float]:
+    def compress_block(self, block: torch.Tensor) -> tuple[torch.Tensor, float, float, float]:
         first_element, mean_slope, normalized_block = self.normalize(block)
         coefficient_indices, biggest_element = self.predict(self.block_transform(normalized_block), mean_slope)
         centered = self.center(coefficient_indices)
         stuff = centered.type(self.index_dtype), first_element, mean_slope, biggest_element
         return stuff
 
-    def decompress_block(
-        self, indices: torch.Tensor, first_element: float, mean_slope: float, biggest_element: float
-    ) -> torch.Tensor:
+    def decompress_block(self, block: CompressedBlock) -> torch.Tensor:
         return self.normalize_inverse(
-            first_element,
-            mean_slope,
+            block.first_element,
+            block.mean_slope,
             self.block_transform(
-                self.predict_inverse(self.center_inverse(indices), mean_slope, biggest_element), inverse=True
-            ),
-        )
-
-    def partial_decompress_block(self, compressed: CompressedBlock) -> tuple[float, float, torch.Tensor, torch.Tensor]:
-        """
-        Perform inverse prediction, inverse transform, inverse normalize (Equation 12).
-        """
-        unpredicted_values = self.predict_inverse(
-            self.center_inverse(compressed.indices), compressed.mean_slope, compressed.biggest_element
-        )
-        return (
-            compressed.first_element,
-            compressed.mean_slope,
-            unpredicted_values,  # B
-            self.block_transform(  # P
-                unpredicted_values,
+                self.predict_inverse(self.center_inverse(block.indices), block.mean_slope, block.biggest_element),
                 inverse=True,
             ),
         )
 
-    def dot_product_block(
-        self,
-        a_first_element: float,
-        a_mean_slope: float,
-        a_unpredicted_values: torch.Tensor,
-        a_differences: torch.Tensor,
-        b_first_element: float,
-        b_mean_slope: float,
-        b_unpredicted_values: torch.Tensor,
-        b_differences: torch.Tensor,
-        row: int,  #row of first tensor
-        column: int  #column of second tensor
-    ) -> float:
-        r = 0.0
-        B1 = torch.zeros(a_differences.shape, dtype=self.index_dtype, device=self.device)
-        B2 = torch.zeros(b_differences.shape, dtype=self.index_dtype, device=self.device)
-
-        for row_index in range(a_differences.size()):
-            for col_index in range(a_differences.size()[0]):
-                if row_index == 0 and col_index == 0:
-                    B1[row_index,col_index] = a_first_element
-                    B2[row_index,col_index] = b_first_element
-                elif row_index == 0 and col_index != 0:
-                    B1[row_index,col_index] = a_unpredicted_values[0,col_index-1] + a_mean_slope*a_differences[0,col_index-1]
-                    B2[row_index,col_index] = b_unpredicted_values[0,col_index-1] + b_mean_slope*b_differences[0,col_index-1]
-                elif row_index != 0 and col_index == 0:
-                    B1[row_index,col_index] = a_unpredicted_values[row_index-1,0] + a_mean_slope*a_differences[row_index-1,0]
-                    B2[row_index,col_index] = b_unpredicted_values[row_index-1,0] + b_mean_slope*b_differences[row_index-1,0]
-                else:
-                    B1[row_index,col_index] = (a_unpredicted_values[row_index-1,col_index] + a_unpredicted_values[row_index, col_index-1])/2 + a_mean_slope*a_differences[row_index-1,col_index-1]
-                    B2[row_index,col_index] = (b_unpredicted_values[row_index-1,col_index] + b_unpredicted_values[row_index, col_index-1])/2 + b_mean_slope*b_differences[row_index-1,col_index-1]
-        for k in range(0,8):
-            r = r + B1[row,k]*B2[k,column]
-        return r                   
+    def dot_product_block(self, a: CompressedBlock, b: CompressedBlock, row: int, column: int) -> float:
+        return self.decompress_block(a)[row] @ self.decompress_block(b)[column]
 
     def block(self, preimage: torch.Tensor) -> torch.Tensor:
         """
@@ -237,19 +188,6 @@ class Compressor:
 
         mean_slope = self.mean_slope(differences)
         return block[(0,) * self.n_dimensions], mean_slope, differences / mean_slope
-
-    def dot_product_normalize_inverse(
-        self,
-        first_element_a: float,
-        mean_slope_a: float,
-        block_a: torch.Tensor,
-        first_element_b: float,
-        mean_slope_b: float,
-        block_b: torch.Tensor,
-    ) -> torch.Tensor:
-        # inverse_normalized_a = self.normalize_inverse(first_element_a, mean_slope_a, block_a)
-        # inverse_normalized_b = self.normalize_inverse(first_element_b, mean_slope_b, block_b)
-        inverse_normalized = torch.zeros(block_a.shape, dtype=self.index_dtype, device=self.device)
 
     def normalize_inverse(self, first_element: float, mean_slope: float, block: torch.Tensor) -> torch.Tensor:
         """
