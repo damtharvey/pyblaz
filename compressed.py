@@ -15,11 +15,11 @@ def _test():
 
     compressed_a = compressor.compress(a)
     # compressed_b = compressor.compress(b)
-    decompressed_product = compressor.decompress(compressed_a * 2)
-
-    print(a * 2)
-    print(decompressed_product)
-    print(((a * 2) - decompressed_product).norm(torch.inf))
+    # decompressed_product = compressor.decompress(compressed_a * 2)
+    #
+    # print(a * 2)
+    # print(decompressed_product)
+    # print(((a * 2) - decompressed_product).norm(torch.inf))
 
 
 class CompressedBlock:
@@ -104,6 +104,14 @@ class CompressedTensor:
     def block_shape(self) -> tuple[int, ...]:
         return self.blocks[(0,) * self.n_dimensions].shape
 
+    @property
+    def transpose(self):
+        """
+
+        :return: blah
+        """
+        return self
+
     def __getitem__(self, item):
         return self.blocks[item]
 
@@ -127,6 +135,22 @@ class CompressedTensor:
 
     def __rmul__(self, other):
         return self * other
+
+    def __matmul__(self, other):
+        """
+        :param other:
+        :return: the matrix multiplication self @ other
+        """
+        pass
+
+    def dot(self, other):
+        """
+
+        :param other:
+        :return: the dot product between self and other
+        """
+        return self.transpose @ other
+
 
     def blockwise_binary(self, other, operation: callable):
         blocks = np.ndarray(self.blocks_shape, dtype=object)
