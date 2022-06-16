@@ -13,17 +13,25 @@ def _test():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     compressor = Compressor(dtype=dtype, device=device)
-    a = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
-    # b = torch.tensor([[0.02 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
+    a = torch.tensor([[0.01 * x * y for y in range(16)] for x in range(16)], dtype=dtype, device=device)
+    b = torch.tensor([[0.02 * x * y for y in range(16)] for x in range(16)], dtype=dtype, device=device)
 
     compressed_a = compressor.compress(a)
-    # compressed_b = compressor.compress(b)
-    decompressed_product = compressor.decompress(compressed_a * 2)
+    compressed_b = compressor.compress(b)
+    
+    decompressed_dotproduct = compressor.dotproduct(compressed_a, compressed_b, 6, 7)
+    dot_row_col = a[6] @ b[:, 7]
+    print(dot_row_col)
+    
+    print(decompressed_dotproduct)
+    print((dot_row_col - decompressed_dotproduct).norm(torch.inf))
 
-    print(a * 2)
-    print(decompressed_product)
-    print(((a * 2) - decompressed_product).norm(torch.inf))
-
+    decompressed_hardamardproduct = compressor.decompress(compressed_a * 2)
+    hardamardproduct = a * 2
+    #print(hardamardproduct)
+    
+    #print(decompressed_hardamardproduct)
+    #print((hardamardproduct - decompressed_hardamardproduct).norm(torch.inf))
 
 class Compressor:
     """
@@ -301,6 +309,32 @@ class Compressor:
 
         return transformed
 
+    def dotproduct(self, compressed_a : CompressedTensor, compressed_b : CompressedTensor, row : int, col : int) -> float:
+        num_blocks_rowwise, num_blocks_colwise = compressed_a.blocks_shape
+        type_of_blocks = [[x,y] for x in range(0,num_blocks_rowwise) for y in range(0,num_blocks_colwise)] #row major format
+        blocks_for_a = [type_of_blocks[i] for i in range(0,len(type_of_blocks)) if type_of_blocks[i][0] == math.floor(row/8)]
+        blocks_for_b = [type_of_blocks[i] for i in range(0,len(type_of_blocks)) if type_of_blocks[i][1] == math.floor(col/8)]
+        print(blocks_for_a)
+        print(blocks_for_b)
+        decompressed_dot_product = 0.0
+
+        for i in range(0,len(blocks_for_a)):
+            some_a_block = CompressedBlock(
+                compressed_a[blocks_for_a[i][0], blocks_for_a[i][1]].indices,
+                compressed_a[blocks_for_a[i][0], blocks_for_a[i][1]].first_element,
+                compressed_a[blocks_for_a[i][0], blocks_for_a[i][1]].mean_slope,
+                compressed_a[blocks_for_a[i][0], blocks_for_a[i][1]].biggest_element,
+            )
+            some_b_block = CompressedBlock(
+                compressed_b[blocks_for_b[i][0], blocks_for_b[i][1]].indices,
+                compressed_b[blocks_for_b[i][0], blocks_for_b[i][1]].first_element,
+                compressed_b[blocks_for_b[i][0], blocks_for_b[i][1]].mean_slope,
+                compressed_b[blocks_for_b[i][0], blocks_for_b[i][1]].biggest_element,
+            )
+
+            
+            decompressed_dot_product += self.dot_product_block(some_a_block, some_b_block, row%8, col%8)
+        return decompressed_dot_product
 
 if __name__ == "__main__":
     _test()
