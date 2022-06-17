@@ -13,32 +13,44 @@ def _test():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     compressor = Compressor(dtype=dtype, device=device)
-    a = torch.tensor([[0.01 * x * y for y in range(16)] for x in range(16)], dtype=dtype, device=device)
-    b = torch.tensor([[0.02 * x * y for y in range(16)] for x in range(16)], dtype=dtype, device=device)
+    a = torch.tensor([[0.01 * x * y for y in range(1, 17)] for x in range(1, 17)], dtype=dtype, device=device)
+    b = torch.tensor([[0.02 * x * y for y in range(1, 17)] for x in range(1, 17)], dtype=dtype, device=device)
+    # a = torch.randn(16, 16, dtype=dtype, device=device)
+    # b = torch.randn(16, 16, dtype=dtype, device=device)
 
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
-    
+    #
     decompressed_addition = compressor.decompress(compressed_a + compressed_b)
     addition = a + b
 
-    decompressed_subtraction = compressor.decompress(compressed_a - compressed_b)
-    subtraction = a - b
+    # decompressed_subtraction = compressor.decompress(compressed_a - compressed_b)
+    # subtraction = a - b
 
     decompressed_mul_constant = compressor.decompress(compressed_a * 5)
     mul_constant = a * 5
-
-    decompressed_dotproduct = compressor.dotproduct(compressed_a, compressed_b, 5, 6)
+    #
+    # decompressed_hadamard_product = compressor.decompress(compressed_a * compressed_b)
+    # hadamard_product_a_b = a * b
+    #
+    decompressed_dotproduct = compressor.dot_product(compressed_a, compressed_b, 5, 6)
     dot_row_col = a[5] @ b[:, 6]
 
-    decompressed_matrixmul = compressor.matmultiplication(compressed_a, compressed_b)
-    matmultiplication = torch.mm(a,b)
+    # decompressed_matrixmul = compressor.matmultiplication(compressed_a, compressed_b)
+    # matmultiplication = torch.mm(a,b)
 
-    print("addition error=", str((addition - decompressed_addition).norm(torch.inf)),"\n")
-    print("subtraction error=",str((subtraction - decompressed_subtraction).norm(torch.inf)),"\n")
-    print("multilpication with a constant error=",str((mul_constant - decompressed_mul_constant).norm(torch.inf)),"\n")
-    print("dot product error=",str((dot_row_col - decompressed_dotproduct).norm(torch.inf)),"\n")
-    print("matrix multiplication error=",str((matmultiplication - decompressed_matrixmul).norm(torch.inf)),"\n")
+    multiply_a_b = a @ b
+    multiply_compressed_a_b = compressor.decompress(compressed_a) @ compressor.decompress(compressed_b)
+    #
+    print("addition error=", str((addition - decompressed_addition).norm(torch.inf)), "\n")
+    # print("subtraction error=", str((subtraction - decompressed_subtraction).norm(torch.inf)), "\n")
+    print(
+        "multilpication with a constant error=", str((mul_constant - decompressed_mul_constant).norm(torch.inf)), "\n"
+    )
+    print("dot product error=", str((dot_row_col - decompressed_dotproduct).norm(torch.inf)), "\n")
+    # # print("matrix multiplication error=",str((matmultiplication - decompressed_matrixmul).norm(torch.inf)),"\n")
+    # print(f"hadamard product {(decompressed_hadamard_product - hadamard_product_a_b).norm(torch.inf)}")
+    # print(f"matrix multiplication {(multiply_a_b - multiply_compressed_a_b).norm(torch.inf)}")
 
 
 class Compressor:
@@ -91,7 +103,8 @@ class Compressor:
 
     def compress_block(self, block: torch.Tensor) -> CompressedBlock:
         first_element, mean_slope, normalized_block = self.normalize(block)
-        coefficient_indices, biggest_element = self.predict(self.block_transform(normalized_block), mean_slope)
+        coefficients = self.block_transform(normalized_block)
+        coefficient_indices, biggest_element = self.predict(coefficients, mean_slope)
         centered = self.center(coefficient_indices)
         return CompressedBlock(centered.type(self.index_dtype), first_element, mean_slope, biggest_element)
 
@@ -340,35 +353,18 @@ class Compressor:
 
         return transformed
 
-    def dotproduct(self, compressed_a: CompressedTensor, compressed_b: CompressedTensor, row: int, col: int) -> float:
-        num_blocks_rowwise, num_blocks_colwise = compressed_a.blocks_shape
-        type_of_blocks = [
-            [x, y] for x in range(0, num_blocks_rowwise) for y in range(0, num_blocks_colwise)
-        ]  # row major format
-        blocks_for_a = [
-            type_of_blocks[i] for i in range(0, len(type_of_blocks)) if type_of_blocks[i][0] == math.floor(row / 8)
-        ]
-        blocks_for_b = [
-            type_of_blocks[i] for i in range(0, len(type_of_blocks)) if type_of_blocks[i][1] == math.floor(col / 8)
-        ]
-        
-        decompressed_dot_product = 0.0
+    def dot_product(self, compressed_a: CompressedTensor, compressed_b: CompressedTensor, row: int, column: int) -> float:
+        assert compressed_a.n_dimensions == 2, "Dot product not defined for dimensions other than 2."
 
-        for i in range(0, len(blocks_for_a)):
-            some_a_block = CompressedBlock(
-                compressed_a[blocks_for_a[i][0], blocks_for_a[i][1]].indices,
-                compressed_a[blocks_for_a[i][0], blocks_for_a[i][1]].first_element,
-                compressed_a[blocks_for_a[i][0], blocks_for_a[i][1]].mean_slope,
-                compressed_a[blocks_for_a[i][0], blocks_for_a[i][1]].biggest_element,
-            )
-            some_b_block = CompressedBlock(
-                compressed_b[blocks_for_b[i][0], blocks_for_b[i][1]].indices,
-                compressed_b[blocks_for_b[i][0], blocks_for_b[i][1]].first_element,
-                compressed_b[blocks_for_b[i][0], blocks_for_b[i][1]].mean_slope,
-                compressed_b[blocks_for_b[i][0], blocks_for_b[i][1]].biggest_element,
-            )
+        a_block_index = row // self.block_shape[0]
+        b_block_index = column // self.block_shape[1]
+        blocks_for_a = ((a_block_index, column_index) for column_index in range(compressed_a.blocks_shape[0]))
+        blocks_for_b = ((row_index, b_block_index) for row_index in range(compressed_b.blocks_shape[1]))
 
-            decompressed_dot_product += self.dot_product_block(some_a_block, some_b_block, row % 8, col % 8)
+        decompressed_dot_product = sum(
+            self.dot_product_block(compressed_a[a_index], compressed_b[b_index], row % self.block_shape[0], column % self.block_shape[1])
+            for a_index, b_index in zip(blocks_for_a, blocks_for_b)
+        )
         return decompressed_dot_product
 
     def matmultiplication(self, compressed_a: CompressedTensor, compressed_b: CompressedTensor) -> torch.Tensor:
@@ -377,10 +373,10 @@ class Compressor:
 
         numofrows = num_blocks_rowwise_a * 8
         numofcols = num_blocks_colwise_b * 8
-        matproduct = torch.zeros((numofrows,numofcols), dtype=self.dtype, device=self.device)
-        for row in range(0,numofrows):
-            for col in range(0,numofcols):
-                matproduct[row, col] = self.dotproduct(compressed_a, compressed_b, row, col)
+        matproduct = torch.zeros((numofrows, numofcols), dtype=self.dtype, device=self.device)
+        for row in range(0, numofrows):
+            for col in range(0, numofcols):
+                matproduct[row, col] = self.dot_product(compressed_a, compressed_b, row, col)
         return matproduct
 
 
