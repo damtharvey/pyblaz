@@ -23,17 +23,16 @@ def _test():
 
 
 class CompressedBlock:
-    def __init__(self, indices: torch.Tensor, first_element: float, mean_slope: float, biggest_element: float):
+    def __init__(self, indices: torch.Tensor, first_element: float, biggest_element: float):
         self.indices = indices
         self.first_element = first_element
-        self.mean_slope = mean_slope
         self.biggest_element = biggest_element
 
     def __neg__(self):
         """
         :return: negated compressed block
         """
-        return CompressedBlock(self.indices, -self.first_element, -self.mean_slope, self.biggest_element)
+        return CompressedBlock(self.indices, -self.first_element, self.biggest_element)
 
     def __add__(self, other):
         """
@@ -54,7 +53,6 @@ class CompressedBlock:
         return CompressedBlock(
             indices.type(self.indices.dtype),
             self.first_element + other.first_element,
-            self.mean_slope + other.mean_slope,
             self.biggest_element + other.biggest_element,
         )
 
@@ -64,14 +62,13 @@ class CompressedBlock:
     def __mul__(self, other):
         if isinstance(other, (float, int)):
             return CompressedBlock(
-                self.indices, self.first_element * other, self.mean_slope * other, self.biggest_element
+                self.indices, self.first_element * other, self.biggest_element
             )
         elif isinstance(other, CompressedBlock):
             a_indices = self.indices.type(torch.int64)
             b_indices = other.indices.type(torch.int64)
 
             first_element = self.first_element * other.first_element
-            mean_slope = self.mean_slope * other.mean_slope
             biggest_element = self.biggest_element + other.biggest_element
             indices = torch.zeros_like(self.indices, dtype=torch.int64)
             where_can_divide = a_indices + b_indices != 0
@@ -80,7 +77,7 @@ class CompressedBlock:
                 a_indices[where_can_divide] + b_indices[where_can_divide],
                 rounding_mode="floor",
             )
-            return CompressedBlock(indices.type(self.indices.dtype), first_element, mean_slope, biggest_element)
+            return CompressedBlock(indices.type(self.indices.dtype), first_element, biggest_element)
         else:
             raise TypeError(f"Multiply not defined between {type(self)} and {type(other)}.")
 
@@ -150,7 +147,6 @@ class CompressedTensor:
         :return: the dot product between self and other
         """
         return self.transpose @ other
-
 
     def blockwise_binary(self, other, operation: callable):
         blocks = np.ndarray(self.blocks_shape, dtype=object)
