@@ -18,13 +18,27 @@ def _test():
 
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
+    
+    decompressed_addition = compressor.decompress(compressed_a + compressed_b)
+    addition = a + b
 
-    decompressed_dotproduct = compressor.dotproduct(compressed_a, compressed_b, 6, 7)
-    dot_row_col = a[6] @ b[:, 7]
-    print(dot_row_col)
+    decompressed_subtraction = compressor.decompress(compressed_a - compressed_b)
+    subtraction = a - b
 
-    print(decompressed_dotproduct)
-    print((dot_row_col - decompressed_dotproduct).norm(torch.inf))
+    decompressed_mul_constant = compressor.decompress(compressed_a * 5)
+    mul_constant = a * 5
+
+    decompressed_dotproduct = compressor.dotproduct(compressed_a, compressed_b, 5, 6)
+    dot_row_col = a[5] @ b[:, 6]
+
+    decompressed_matrixmul = compressor.matmultiplication(compressed_a, compressed_b)
+    matmultiplication = torch.mm(a,b)
+
+    print("addition error=", str((addition - decompressed_addition).norm(torch.inf)),"\n")
+    print("subtraction error=",str((subtraction - decompressed_subtraction).norm(torch.inf)),"\n")
+    print("multilpication with a constant error=",str((mul_constant - decompressed_mul_constant).norm(torch.inf)),"\n")
+    print("dot product error=",str((dot_row_col - decompressed_dotproduct).norm(torch.inf)),"\n")
+    print("matrix multiplication error=",str((matmultiplication - decompressed_matrixmul).norm(torch.inf)),"\n")
 
 
 class Compressor:
@@ -337,8 +351,7 @@ class Compressor:
         blocks_for_b = [
             type_of_blocks[i] for i in range(0, len(type_of_blocks)) if type_of_blocks[i][1] == math.floor(col / 8)
         ]
-        print(blocks_for_a)
-        print(blocks_for_b)
+        
         decompressed_dot_product = 0.0
 
         for i in range(0, len(blocks_for_a)):
@@ -357,6 +370,18 @@ class Compressor:
 
             decompressed_dot_product += self.dot_product_block(some_a_block, some_b_block, row % 8, col % 8)
         return decompressed_dot_product
+
+    def matmultiplication(self, compressed_a: CompressedTensor, compressed_b: CompressedTensor) -> torch.Tensor:
+        num_blocks_rowwise_a, num_blocks_colwise_a = compressed_a.blocks_shape
+        num_blocks_rowwise_b, num_blocks_colwise_b = compressed_b.blocks_shape
+
+        numofrows = num_blocks_rowwise_a * 8
+        numofcols = num_blocks_colwise_b * 8
+        matproduct = torch.zeros((numofrows,numofcols), dtype=self.dtype, device=self.device)
+        for row in range(0,numofrows):
+            for col in range(0,numofcols):
+                matproduct[row, col] = self.dotproduct(compressed_a, compressed_b, row, col)
+        return matproduct
 
 
 if __name__ == "__main__":
