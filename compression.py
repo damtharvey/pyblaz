@@ -18,20 +18,14 @@ def _test():
 
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
-    
+
     decompressed_dotproduct = compressor.dotproduct(compressed_a, compressed_b, 6, 7)
     dot_row_col = a[6] @ b[:, 7]
     print(dot_row_col)
-    
+
     print(decompressed_dotproduct)
     print((dot_row_col - decompressed_dotproduct).norm(torch.inf))
 
-    decompressed_hardamardproduct = compressor.decompress(compressed_a * 2)
-    hardamardproduct = a * 2
-    #print(hardamardproduct)
-    
-    #print(decompressed_hardamardproduct)
-    #print((hardamardproduct - decompressed_hardamardproduct).norm(torch.inf))
 
 class Compressor:
     """
@@ -100,24 +94,32 @@ class Compressor:
     def dot_product_block(self, a: CompressedBlock, b: CompressedBlock, row: int, column: int) -> float:
         return self.decompress_block(a)[row] @ self.decompress_block(b)[:, column]
 
-    def block(self, preimage: torch.Tensor) -> torch.Tensor:
+    def block(self, unblocked: torch.Tensor) -> torch.Tensor:
         """
         Section II.a
 
         Block Splitting
 
-        :param preimage: uncompressed tensor
+        :param unblocked: uncompressed tensor
         :return: tensor of shape blocks' shape followed by block shape.
         """
-        image_shape = (
+        blocked_shape = (
             *(
-                (preimage_size + block_size - 1) // block_size
-                for preimage_size, block_size in zip(preimage.shape, self.block_shape)
+                (unblocked_size + block_size - 1) // block_size
+                for unblocked_size, block_size in zip(unblocked.shape, self.block_shape)
             ),
             *self.block_shape,
         )
-        # TODO consider using view.
-        return torch.reshape(preimage, image_shape)
+        blocked = torch.zeros(blocked_shape, dtype=self.dtype, device=self.device)
+        for unblocked_indices in itertools.product(*(range(size) for size in unblocked.shape)):
+            blocked[
+                (
+                    *(index // size for index, size in zip(unblocked_indices, self.block_shape)),
+                    *(index % size for index, size in zip(unblocked_indices, self.block_shape)),
+                )
+            ] = unblocked[unblocked_indices]
+
+        return blocked
 
     def block_inverse(self, blocked: torch.Tensor) -> torch.Tensor:
         """
@@ -126,10 +128,25 @@ class Compressor:
         :param blocked: tensor of shape blocks' shape followed by block shape.
         :return: unblocked tensor
         """
-        return torch.reshape(
-            blocked,
-            tuple(n_blocks * size for n_blocks, size in zip(blocked.shape[: self.n_dimensions], self.block_shape)),
+        unblocked_shape = (
+            *(n_blocks * size for n_blocks, size in zip(blocked.shape[: self.n_dimensions], self.block_shape)),
         )
+        unblocked = torch.zeros(unblocked_shape, dtype=self.dtype, device=self.device)
+        for blocked_indices in itertools.product(*(range(size) for size in blocked.shape)):
+            unblocked[
+                (
+                    *(
+                        block_number * block_size + offset
+                        for block_number, block_size, offset in zip(
+                            blocked_indices[: self.n_dimensions],
+                            self.block_shape,
+                            blocked_indices[self.n_dimensions :],
+                        )
+                    ),
+                )
+            ] = blocked[blocked_indices]
+
+        return unblocked
 
     def normalize(self, block: torch.Tensor) -> tuple[torch.float, torch.float, torch.Tensor]:
         """
@@ -309,16 +326,22 @@ class Compressor:
 
         return transformed
 
-    def dotproduct(self, compressed_a : CompressedTensor, compressed_b : CompressedTensor, row : int, col : int) -> float:
+    def dotproduct(self, compressed_a: CompressedTensor, compressed_b: CompressedTensor, row: int, col: int) -> float:
         num_blocks_rowwise, num_blocks_colwise = compressed_a.blocks_shape
-        type_of_blocks = [[x,y] for x in range(0,num_blocks_rowwise) for y in range(0,num_blocks_colwise)] #row major format
-        blocks_for_a = [type_of_blocks[i] for i in range(0,len(type_of_blocks)) if type_of_blocks[i][0] == math.floor(row/8)]
-        blocks_for_b = [type_of_blocks[i] for i in range(0,len(type_of_blocks)) if type_of_blocks[i][1] == math.floor(col/8)]
+        type_of_blocks = [
+            [x, y] for x in range(0, num_blocks_rowwise) for y in range(0, num_blocks_colwise)
+        ]  # row major format
+        blocks_for_a = [
+            type_of_blocks[i] for i in range(0, len(type_of_blocks)) if type_of_blocks[i][0] == math.floor(row / 8)
+        ]
+        blocks_for_b = [
+            type_of_blocks[i] for i in range(0, len(type_of_blocks)) if type_of_blocks[i][1] == math.floor(col / 8)
+        ]
         print(blocks_for_a)
         print(blocks_for_b)
         decompressed_dot_product = 0.0
 
-        for i in range(0,len(blocks_for_a)):
+        for i in range(0, len(blocks_for_a)):
             some_a_block = CompressedBlock(
                 compressed_a[blocks_for_a[i][0], blocks_for_a[i][1]].indices,
                 compressed_a[blocks_for_a[i][0], blocks_for_a[i][1]].first_element,
@@ -332,9 +355,9 @@ class Compressor:
                 compressed_b[blocks_for_b[i][0], blocks_for_b[i][1]].biggest_element,
             )
 
-            
-            decompressed_dot_product += self.dot_product_block(some_a_block, some_b_block, row%8, col%8)
+            decompressed_dot_product += self.dot_product_block(some_a_block, some_b_block, row % 8, col % 8)
         return decompressed_dot_product
+
 
 if __name__ == "__main__":
     _test()
