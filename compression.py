@@ -47,6 +47,7 @@ class Compressor:
 
         self.n_coefficients = None
         self.transformer_tensor = None
+        self.inverse_transformer_tensor = None
 
         if self.n_bins <= 1 << 8:
             self.index_dtype = torch.int8
@@ -81,13 +82,9 @@ class Compressor:
         return CompressedBlock(centered.type(self.index_dtype), first_element, biggest_element)
 
     def decompress_block(self, block: CompressedBlock) -> torch.Tensor:
-        return self.normalize_inverse(
-            block.first_element,
-            self.block_transform(
-                self.predict_inverse(self.center_inverse(block.indices), block.biggest_element),
-                inverse=True,
-            ),
-        )
+        coefficients = self.predict_inverse(self.center_inverse(block.indices), block.biggest_element)
+        differences = self.block_transform(coefficients, inverse=True)
+        return self.normalize_inverse(block.first_element, differences)
 
     def dot_product_block(self, a: CompressedBlock, b: CompressedBlock, row: int, column: int) -> float:
         return self.decompress_block(a)[row] @ self.decompress_block(b)[:, column]
@@ -220,14 +217,14 @@ class Compressor:
 
         return unnormalized
 
-    def predict(self, normalized_block: torch.Tensor) -> tuple[torch.Tensor, torch.float]:
+    def predict(self, coefficients: torch.Tensor) -> tuple[torch.Tensor, torch.float]:
         """
         Section II.c
 
-        :param normalized_block:
-        :return: Indices of the slope bins
+        :param coefficients:
+        :return: Indices of the coefficient bins
         """
-        biggest_element = normalized_block.norm(torch.inf)
+        biggest_element = coefficients.norm(torch.inf)
         slopes = torch.linspace(
             -biggest_element,
             biggest_element,
@@ -235,11 +232,9 @@ class Compressor:
             dtype=self.dtype,
             device=self.device,
         )
-        return (normalized_block.unsqueeze(-1) - slopes).abs().min(-1).indices, biggest_element
+        return (coefficients.unsqueeze(-1) - slopes).abs().min(-1).indices, biggest_element
 
-    def predict_inverse(
-        self, indices: torch.Tensor, biggest_element: torch.float
-    ) -> torch.Tensor:
+    def predict_inverse(self, indices: torch.Tensor, biggest_element: torch.float) -> torch.Tensor:
         """
         Section II.(-c)
 
@@ -322,32 +317,22 @@ class Compressor:
     def dot_product(
         self, compressed_a: CompressedTensor, compressed_b: CompressedTensor, row: int, column: int
     ) -> float:
-        assert compressed_a.n_dimensions == 2, "Dot product not defined for dimensions other than 2."
+        assert (
+            compressed_a.n_dimensions == 2 and compressed_b.n_dimensions == 2
+        ), "Dot product not defined for dimensions other than 2."
 
         a_block_index = row // self.block_shape[0]
         b_block_index = column // self.block_shape[1]
-        blocks_for_a = ((a_block_index, column_index) for column_index in range(compressed_a.blocks_shape[0]))
-        blocks_for_b = ((row_index, b_block_index) for row_index in range(compressed_b.blocks_shape[1]))
+        block_row = row % self.block_shape[0]
+        block_column = column % self.block_shape[1]
 
-        decompressed_dot_product = sum(
-            self.dot_product_block(
-                compressed_a[a_index], compressed_b[b_index], row % self.block_shape[0], column % self.block_shape[1]
+        return sum(
+            self.dot_product_block(compressed_a[a_index], compressed_b[b_index], block_row, block_column)
+            for a_index, b_index in zip(
+                ((a_block_index, column_index) for column_index in range(compressed_a.blocks_shape[0])),
+                ((row_index, b_block_index) for row_index in range(compressed_b.blocks_shape[1])),
             )
-            for a_index, b_index in zip(blocks_for_a, blocks_for_b)
         )
-        return decompressed_dot_product
-
-    def matmultiplication(self, compressed_a: CompressedTensor, compressed_b: CompressedTensor) -> torch.Tensor:
-        num_blocks_rowwise_a, num_blocks_colwise_a = compressed_a.blocks_shape
-        num_blocks_rowwise_b, num_blocks_colwise_b = compressed_b.blocks_shape
-
-        numofrows = num_blocks_rowwise_a * 8
-        numofcols = num_blocks_colwise_b * 8
-        matproduct = torch.zeros((numofrows, numofcols), dtype=self.dtype, device=self.device)
-        for row in range(0, numofrows):
-            for col in range(0, numofcols):
-                matproduct[row, col] = self.dot_product(compressed_a, compressed_b, row, col)
-        return matproduct
 
 
 if __name__ == "__main__":

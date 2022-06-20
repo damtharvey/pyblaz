@@ -5,21 +5,7 @@ import numpy as np
 
 
 def _test():
-    from compression import Compressor
-    dtype = torch.float64
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    compressor = Compressor(dtype=dtype, device=device)
-    a = torch.tensor([[0.01 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
-    # b = torch.tensor([[0.02 * x * y for y in range(8)] for x in range(8)], dtype=dtype, device=device)
-
-    compressed_a = compressor.compress(a)
-    # compressed_b = compressor.compress(b)
-    # decompressed_product = compressor.decompress(compressed_a * 2)
-    #
-    # print(a * 2)
-    # print(decompressed_product)
-    # print(((a * 2) - decompressed_product).norm(torch.inf))
+    pass
 
 
 class CompressedBlock:
