@@ -9,61 +9,50 @@ def _test():
 
 
 class CompressedBlock:
-    def __init__(self, indices: torch.Tensor, first_element: float, biggest_element: float):
-        self.indices = indices
+    INDICES_RADIUS = {
+        torch.int8: (1 << 7) - 1,
+        torch.int16: (1 << 15) - 1,
+        torch.int32: (1 << 31) - 1,
+        torch.int64: (1 << 63) - 1,
+    }
+
+    def __init__(self, first_element: float, biggest_coefficient: float, indices: torch.Tensor):
         self.first_element = first_element
-        self.biggest_element = biggest_element
+        self.biggest_coefficient = biggest_coefficient
+        self.indices = indices
 
     def __neg__(self):
         """
         :return: negated compressed block
         """
-        return CompressedBlock(self.indices, -self.first_element, self.biggest_element)
+        return CompressedBlock(-self.first_element, self.biggest_coefficient, -self.indices)
 
     def __add__(self, other):
         """
         :param other: compressed block
         :return: the compressed sum of self and other
         """
-        a_indices = self.indices.type(torch.int64)
-        b_indices = other.indices.type(torch.int64)
-
-        indices = torch.zeros_like(self.indices, dtype=torch.int64)
-        where_can_divide = a_indices + b_indices != 0
-        indices[where_can_divide] = torch.div(
-            a_indices[where_can_divide] * b_indices[where_can_divide],
-            a_indices[where_can_divide] + b_indices[where_can_divide],
-            rounding_mode="floor",
-        )
-
+        indices = self.indices * self.biggest_coefficient + other.indices * other.biggest_coefficient
+        proportion_of_radius = indices.norm(torch.inf) / self.INDICES_RADIUS[self.indices.dtype]
+        if proportion_of_radius:
+            indices = (indices / proportion_of_radius).round().type(self.indices.dtype)
         return CompressedBlock(
-            indices.type(self.indices.dtype),
             self.first_element + other.first_element,
-            self.biggest_element + other.biggest_element,
+            proportion_of_radius,
+            indices,
         )
 
     def __sub__(self, other):
         return self + -other
 
     def __mul__(self, other):
-        if isinstance(other, (float, int)):
-            return CompressedBlock(
-                self.indices, self.first_element * other, self.biggest_element
+        if isinstance(other, (float, int)) or (isinstance(other, torch.Tensor) and other.numel() == 1):
+            product = CompressedBlock(
+                self.first_element * abs(other), self.biggest_coefficient * abs(other), self.indices
             )
-        elif isinstance(other, CompressedBlock):
-            a_indices = self.indices.type(torch.int64)
-            b_indices = other.indices.type(torch.int64)
-
-            first_element = self.first_element * other.first_element
-            biggest_element = self.biggest_element + other.biggest_element
-            indices = torch.zeros_like(self.indices, dtype=torch.int64)
-            where_can_divide = a_indices + b_indices != 0
-            indices[where_can_divide] = torch.div(
-                a_indices[where_can_divide] * b_indices[where_can_divide],
-                a_indices[where_can_divide] + b_indices[where_can_divide],
-                rounding_mode="floor",
-            )
-            return CompressedBlock(indices.type(self.indices.dtype), first_element, biggest_element)
+            if other < 0:
+                product = -product
+            return product
         else:
             raise TypeError(f"Multiply not defined between {type(self)} and {type(other)}.")
 
@@ -87,14 +76,6 @@ class CompressedTensor:
     def block_shape(self) -> tuple[int, ...]:
         return self.blocks[(0,) * self.n_dimensions].shape
 
-    @property
-    def transpose(self):
-        """
-
-        :return: blah
-        """
-        return self
-
     def __getitem__(self, item):
         return self.blocks[item]
 
@@ -105,7 +86,7 @@ class CompressedTensor:
         blocks = np.ndarray(self.blocks_shape, dtype=object)
         for block_index in itertools.product(*(range(size) for size in self.blocks_shape)):
             blocks[block_index] = -self[block_index]
-        return blocks
+        return CompressedTensor(blocks)
 
     def __add__(self, other):
         return self.blockwise_binary(other, CompressedBlock.__add__)
@@ -136,7 +117,7 @@ class CompressedTensor:
 
     def blockwise_binary(self, other, operation: callable):
         blocks = np.ndarray(self.blocks_shape, dtype=object)
-        if hasattr(other, "__getitem__"):
+        if isinstance(other, CompressedTensor):
             for block_index in itertools.product(*(range(size) for size in self.blocks_shape)):
                 blocks[block_index] = operation(self[block_index], other[block_index])
             return CompressedTensor(blocks)

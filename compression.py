@@ -13,16 +13,55 @@ def _test():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     compressor = Compressor(dtype=dtype, device=device)
-    a = torch.tensor([[0.01 * x * y for y in range(1, 17)] for x in range(1, 17)], dtype=dtype, device=device)
-    # b = torch.tensor([[0.02 * x * y for y in range(1, 17)] for x in range(1, 17)], dtype=dtype, device=device)
 
-    compressed_a = compressor.compress(a)
-    # compressed_b = compressor.compress(b)
+    # addition
+    print("\naddition")
+    for i in range(1, 6):
+        a = torch.tensor(
+            [[(-1) ** i * 0.01 * i * x * y for y in range(1, 17)] for x in range(1, 17)], dtype=dtype, device=device
+        )
+        b = torch.tensor(
+            [[(-1) ** (i + 1) * 0.02 * i * x * y for y in range(1, 17)] for x in range(1, 17)],
+            dtype=dtype,
+            device=device,
+        )
 
-    decompressed_a = compressor.decompress(compressed_a)
-    # decompressed_b = compressor.decompress(compressed_b)
+        compressed_a = compressor.compress(a)
+        compressed_b = compressor.compress(b)
+        compressed_c = compressed_a + compressed_b
+        decompressed_c = compressor.decompress(compressed_c)
+        print((a + b - decompressed_c).norm(torch.inf))
 
-    print((decompressed_a - a).norm(torch.inf))
+    # subtraction
+    print("\nsubtraction")
+    for i in range(1, 6):
+        a = torch.tensor(
+            [[(-1) ** i * 0.01 * i * x * y for y in range(1, 17)] for x in range(1, 17)], dtype=dtype, device=device
+        )
+        b = torch.tensor(
+            [[(-1) ** (i + 1) * 0.02 * i * x * y for y in range(1, 17)] for x in range(1, 17)],
+            dtype=dtype,
+            device=device,
+        )
+
+        compressed_a = compressor.compress(a)
+        compressed_b = compressor.compress(b)
+        compressed_c = compressed_a - compressed_b
+        decompressed_c = compressor.decompress(compressed_c)
+        print((a - b - decompressed_c).norm(torch.inf))
+
+    # multiply by scalar
+    print("\nmultiply by scalar")
+    for i in range(1, 6):
+        a = torch.tensor(
+            [[(-1) ** i * 0.01 * i * x * y for y in range(1, 17)] for x in range(1, 17)], dtype=dtype, device=device
+        )
+        s = torch.randn(1, device=device)
+
+        compressed_a = compressor.compress(a)
+        compressed_c = s * compressed_a
+        decompressed_c = compressor.decompress(compressed_c)
+        print((s * a - decompressed_c).norm(torch.inf))
 
 
 class Compressor:
@@ -51,7 +90,7 @@ class Compressor:
 
         if self.n_bins <= 1 << 8:
             self.index_dtype = torch.int8
-        elif self.n_bins <= 1 << 1:
+        elif self.n_bins <= 1 << 16:
             self.index_dtype = torch.int16
         elif self.n_bins <= 1 << 32:
             self.index_dtype = torch.int32
@@ -77,12 +116,13 @@ class Compressor:
     def compress_block(self, block: torch.Tensor) -> CompressedBlock:
         first_element, normalized_block = self.normalize(block)
         coefficients = self.block_transform(normalized_block)
-        coefficient_indices, biggest_element = self.predict(coefficients)
-        centered = self.center(coefficient_indices)
-        return CompressedBlock(centered.type(self.index_dtype), first_element, biggest_element)
+        indices, biggest_coefficient = self.predict(coefficients)
+        centered = self.center(indices)
+        return CompressedBlock(first_element, biggest_coefficient, centered)
 
     def decompress_block(self, block: CompressedBlock) -> torch.Tensor:
-        coefficients = self.predict_inverse(self.center_inverse(block.indices), block.biggest_element)
+        uncentered = self.center_inverse(block.indices)
+        coefficients = self.predict_inverse(uncentered, block.biggest_coefficient)
         differences = self.block_transform(coefficients, inverse=True)
         return self.normalize_inverse(block.first_element, differences)
 
@@ -217,39 +257,42 @@ class Compressor:
 
         return unnormalized
 
-    def predict(self, coefficients: torch.Tensor) -> tuple[torch.Tensor, torch.float]:
+    def predict(self, coefficients: torch.Tensor) -> tuple[torch.Tensor, float]:
         """
         Section II.c
 
         :param coefficients:
         :return: Indices of the coefficient bins
         """
-        biggest_element = coefficients.norm(torch.inf)
-        slopes = torch.linspace(
-            -biggest_element,
-            biggest_element,
+        biggest_coefficient = coefficients.norm(torch.inf)
+        bins = torch.linspace(
+            -biggest_coefficient - (2 * biggest_coefficient) / (self.n_bins - 2),
+            biggest_coefficient,
             self.n_bins,
             dtype=self.dtype,
             device=self.device,
         )
-        return (coefficients.unsqueeze(-1) - slopes).abs().min(-1).indices, biggest_element
+        return (coefficients.unsqueeze(-1) - bins).abs().min(-1).indices.type(self.index_dtype), biggest_coefficient
 
-    def predict_inverse(self, indices: torch.Tensor, biggest_element: torch.float) -> torch.Tensor:
+    def predict_inverse(self, indices: torch.Tensor, biggest_coefficient: float) -> torch.Tensor:
         """
         Section II.(-c)
 
         :param indices: Indices of the bins
-        :param biggest_element: biggest element of the normalized block before binning
+        :param biggest_coefficient: biggest bin value.
         :return: Values corresponding to each index
         """
-        slopes = torch.linspace(
-            -biggest_element,
-            biggest_element,
+        biggest_coefficient = float(biggest_coefficient)  # in case it's a Tensor.
+        assert biggest_coefficient >= 0, f"The biggest coefficient {biggest_coefficient} should be non-negative."
+
+        bins = torch.linspace(
+            -biggest_coefficient - (2 * biggest_coefficient) / (self.n_bins - 2),
+            biggest_coefficient,
             self.n_bins,
             dtype=self.dtype,
             device=self.device,
         )
-        return slopes[indices.type(torch.int64)]
+        return bins[indices.type(torch.int64)]
 
     def center(self, slope_indices: torch.Tensor) -> torch.Tensor:
         """
@@ -259,7 +302,7 @@ class Compressor:
         :param slope_indices:
         :return: block of integers where the mean slope index is 0.
         """
-        return slope_indices - self.n_bins // 2 + 1
+        return slope_indices - self.n_bins // 2
 
     def center_inverse(self, centered_slope_indices: torch.Tensor) -> torch.Tensor:
         """
@@ -268,7 +311,7 @@ class Compressor:
         :param centered_slope_indices:
         :return: block of non-negative slope indices
         """
-        return centered_slope_indices + self.n_bins // 2 - 1
+        return centered_slope_indices + self.n_bins // 2
 
     def block_transform(self, slope_indices: torch.Tensor, n_coefficients: int = None, inverse=False) -> torch.Tensor:
         """

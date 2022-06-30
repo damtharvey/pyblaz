@@ -3,17 +3,7 @@ import torch
 
 
 def _test():
-    his_dct_matrix = torch.tensor([0.3535534, 0.3535534, 0.3535534, 0.3535534, 0.3535534, 0.3535534, 0.3535534, 0.3535534,
-                        0.490393, 0.415735, 0.277785, 0.0975452, -0.0975452, -0.277785, -0.415735, -0.490393,
-                        0.46194, 0.191342, -0.191342, -0.46194, -0.46194, -0.191342, 0.191342, 0.46194,
-                        0.415735, -0.0975452, -0.490393, -0.277785, 0.277785, 0.490393, 0.0975452, -0.415735,
-                        0.353553, -0.353553, -0.353553, 0.353553, 0.353553, -0.353553, -0.353553, 0.353553,
-                        0.277785, -0.490393, 0.0975452, 0.415735, -0.415735, -0.0975452, 0.490393, -0.277785,
-                        0.191342, -0.46194, 0.46194, -0.191342, -0.191342, 0.46194, -0.46194, 0.191342,
-                        0.0975452, -0.277785, 0.415735, -0.490393, 0.490393, -0.415735, 0.277785, -0.0975452]).reshape(8,8)
-    my_dct_matrix = discrete_cosine_transform_matrix(8)
-    
-    print((his_dct_matrix - my_dct_matrix).norm(torch.inf))
+    pass
 
 
 def cosine(block_size: int, element: int, frequency: int, inverse: bool = False) -> float:
@@ -31,10 +21,28 @@ def cosine(block_size: int, element: int, frequency: int, inverse: bool = False)
     )
 
 
-def discrete_cosine_transform_matrix(size: int, inverse: bool = False):
-    return torch.tensor(
-        [[cosine(size, element, frequency, inverse) for element in range(size)] for frequency in range(size)]
-    )
+def haar(block_size: int, point: float, order: int, inverse: bool = False) -> float:
+    """
+    :param block_size: The number of elements in the vector you want to transform.
+    :param point: Point / block size of the Haar function to sample.
+    :param order: Order of the Haar function.
+    :param inverse: Whether to return the element from the inverse transform matrix.
+    :return: Haar function evaluated at the point / block size.
+    """
+    if inverse:
+        point, order = order, point
+    if not order:
+        return 1 / math.sqrt(block_size)
+    else:
+        point /= block_size
+        p = int(math.floor(math.log2(order)))
+        q = order % (1 << p)
+        if q / 2**p <= point < (q + 0.5) / 2**p:
+            return 2 ** (p / 2) / math.sqrt(block_size)
+        elif (q + 0.5) / 2**p <= point < (q + 1) / 2**p:
+            return -(2 ** (p / 2)) / math.sqrt(block_size)
+        else:
+            return 0
 
 
 if __name__ == "__main__":
