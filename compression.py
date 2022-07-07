@@ -2,6 +2,7 @@ import itertools
 import math
 
 import torch
+import torchvision
 import numpy as np
 
 import transforms
@@ -14,54 +15,29 @@ def _test():
 
     compressor = Compressor(dtype=dtype, device=device)
 
-    # addition
-    print("\naddition")
-    for i in range(1, 6):
-        a = torch.tensor(
-            [[(-1) ** i * 0.01 * i * x * y for y in range(1, 17)] for x in range(1, 17)], dtype=dtype, device=device
-        )
-        b = torch.tensor(
-            [[(-1) ** (i + 1) * 0.02 * i * x * y for y in range(1, 17)] for x in range(1, 17)],
-            dtype=dtype,
-            device=device,
-        )
+    dataset = torchvision.datasets.MNIST(root="data", train=False, download=True)
 
-        compressed_a = compressor.compress(a)
-        compressed_b = compressor.compress(b)
-        compressed_c = compressed_a + compressed_b
-        decompressed_c = compressor.decompress(compressed_c)
-        print((a + b - decompressed_c).norm(torch.inf))
+    # a = (dataset.data[0] / 255).to(device)
+    # b = (dataset.data[1] / 255).to(device)
 
-    # subtraction
-    print("\nsubtraction")
-    for i in range(1, 6):
-        a = torch.tensor(
-            [[(-1) ** i * 0.01 * i * x * y for y in range(1, 17)] for x in range(1, 17)], dtype=dtype, device=device
-        )
-        b = torch.tensor(
-            [[(-1) ** (i + 1) * 0.02 * i * x * y for y in range(1, 17)] for x in range(1, 17)],
-            dtype=dtype,
-            device=device,
-        )
+    a = torch.zeros(32, 32, dtype=dtype, device=device)
+    b = torch.zeros(32, 32, dtype=dtype, device=device)
 
-        compressed_a = compressor.compress(a)
-        compressed_b = compressor.compress(b)
-        compressed_c = compressed_a - compressed_b
-        decompressed_c = compressor.decompress(compressed_c)
-        print((a - b - decompressed_c).norm(torch.inf))
+    compressed_a = compressor.compress(a)
+    compressed_b = compressor.compress(b)
 
-    # multiply by scalar
-    print("\nmultiply by scalar")
-    for i in range(1, 6):
-        a = torch.tensor(
-            [[(-1) ** i * 0.01 * i * x * y for y in range(1, 17)] for x in range(1, 17)], dtype=dtype, device=device
-        )
-        s = torch.randn(1, device=device)
+    print("\n compression-decompression loss")
+    decompressed_a = compressor.decompress(compressed_a)
+    decompressed_b = compressor.decompress(compressed_b)
 
-        compressed_a = compressor.compress(a)
-        compressed_c = s * compressed_a
-        decompressed_c = compressor.decompress(compressed_c)
-        print((s * a - decompressed_c).norm(torch.inf))
+    print(decompressed_a)
+    print(decompressed_b)
+
+    print((a - decompressed_a).norm(torch.inf))
+    print((b - decompressed_b).norm(torch.inf))
+
+    # print("\nmatrix multiplication")
+    # print(compressed_a @ compressed_b)
 
 
 class Compressor:
