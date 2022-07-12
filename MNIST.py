@@ -16,7 +16,7 @@ def _test():
 
     a = (dataset.data[0] / 255).to(device)
     b = (dataset.data[1] / 255).to(device)
-
+    print(a)
     #a = torch.zeros(32, 32, dtype=dtype, device=device)
     #b = torch.zeros(32, 32, dtype=dtype, device=device)
 
