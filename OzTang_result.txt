@@ -1,0 +1,15 @@
+Total runtime of the decompressed_subtraction is 118.32404112815857 secs
+Total runtime of the subtraction_compression_decompression is 219.7244417667389 secs
+difference between actual subtraction and subtraction in compressed domain = 0.002708344170447046 
+difference between actual subtraction and subtraction after decompressing the data = 0.002703816873009579
+Total runtime of the dotproduct_compression_decompression is 3.4600260257720947 secs
+Total runtime of the dotproduct_compression_decompression is 219.55231595039368 secs
+difference between actual dot product and dot product in compressed domain = 0.0007563319327985596
+difference between actual dot product and dot product after decompressing the data = 0.0007563319327879015
+╒═════════════╤══════════════════════════════╤═════════════════════════════╤═════════════════════════════════╤════════════════════════════════╕
+│ Operation   │   Time in compressed domain  │   Time after decompression  │   Accuracy in compressed domain │   Accuracy after decompression │
+╞═════════════╪══════════════════════════════╪═════════════════════════════╪═════════════════════════════════╪════════════════════════════════╡
+│ Subtraction │                    118.324   │                     219.724 │                     0.00731485  │                    0.00270382  │
+├─────────────┼──────────────────────────────┼─────────────────────────────┼─────────────────────────────────┼────────────────────────────────┤
+│ Dot product │                      3.46003 │                     219.552 │                     0.000756332 │                    0.000756332 │
+╘═════════════╧══════════════════════════════╧═════════════════════════════╧═════════════════════════════════╧════════════════════════════════╛

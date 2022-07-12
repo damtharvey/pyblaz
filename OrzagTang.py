@@ -60,7 +60,7 @@ decompressed_dotproduct = compressor.dot_product(compressed_a, compressed_b, 5, 
 end3 = time.time()    
 dot_row_col = a[5] @ b[:, 6]
 
-print(f"Total runtime of the subtraction_compression_decompression is {end3 - begin3} secs")
+print(f"Total runtime of the dotproduct_compression_decompression is {end3 - begin3} secs")
 
 
 begin4 = time.time()
@@ -70,7 +70,7 @@ dotproduct_compression_decompression = decompressed_a[5] @ decompressed_b[:, 6]
 end4 = time.time()
 dot_row_col = a[5] @ b[:, 6]
 
-print(f"Total runtime of the subtraction_compression_decompression is {end4 - begin4} secs")
+print(f"Total runtime of the dotproduct_compression_decompression is {end4 - begin4} secs")
 time3 = end3 - begin3
 accuracy3 = (dot_row_col - decompressed_dotproduct).norm(torch.inf)
 time4 = end4 - begin4
