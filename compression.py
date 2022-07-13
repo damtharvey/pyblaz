@@ -9,10 +9,8 @@ import transforms
 from compressed import CompressedBlock, CompressedTensor
 
 
-
 def _test():
     pass
-    
 
 
 class Compressor:
@@ -21,12 +19,12 @@ class Compressor:
     """
 
     def __init__(
-        self,
-        block_shape: tuple[int, ...] = (8, 8),
-        n_bins: int = 256,
-        transform: callable = transforms.cosine,
-        dtype: torch.dtype = torch.float32,
-        device: torch.device = torch.device("cuda"),
+            self,
+            block_shape: tuple[int, ...] = (8, 8),
+            n_bins: int = 256,
+            transform: callable = transforms.cosine,
+            dtype: torch.dtype = torch.float32,
+            device: torch.device = torch.device("cuda"),
     ):
         self.block_shape = block_shape
         self.n_bins = n_bins
@@ -124,10 +122,10 @@ class Compressor:
                     *(
                         block_number * block_size + offset
                         for block_number, block_size, offset in zip(
-                            blocked_indices[: self.n_dimensions],
-                            self.block_shape,
-                            blocked_indices[self.n_dimensions :],
-                        )
+                        blocked_indices[: self.n_dimensions],
+                        self.block_shape,
+                        blocked_indices[self.n_dimensions:],
+                    )
                     ),
                 )
             ] = blocked[blocked_indices]
@@ -180,13 +178,13 @@ class Compressor:
         for n_slice_indices in range(1, self.n_dimensions + 1):
             for slice_directions in itertools.combinations(range(self.n_dimensions), n_slice_indices):
                 for _, index_group in itertools.groupby(
-                    itertools.product(
-                        *(
-                            range(1, size) if direction in slice_directions else (0,)
-                            for direction, size in enumerate(unnormalized.shape)
-                        )
-                    ),
-                    key=lambda x: sum(x),
+                        itertools.product(
+                            *(
+                                    range(1, size) if direction in slice_directions else (0,)
+                                    for direction, size in enumerate(unnormalized.shape)
+                            )
+                        ),
+                        key=lambda x: sum(x),
                 ):
                     assignee_indices = np.array(tuple(index_group))
                     assignee_indices_str = ",".join(
@@ -197,13 +195,13 @@ class Compressor:
                         adjacent_indices = assignee_indices.copy().T
                         adjacent_indices[direction] -= 1
                         unnormalized[eval(assignee_indices_str)] += (
-                            torch.take(
-                                unnormalized,
-                                torch.tensor(
-                                    np.ravel_multi_index(adjacent_indices, self.block_shape), device=self.device
-                                ),
-                            )
-                            / n_slice_indices
+                                torch.take(
+                                    unnormalized,
+                                    torch.tensor(
+                                        np.ravel_multi_index(adjacent_indices, self.block_shape), device=self.device
+                                    ),
+                                )
+                                / n_slice_indices
                         )
 
         return unnormalized
@@ -309,10 +307,10 @@ class Compressor:
         return transformed
 
     def dot_product(
-        self, compressed_a: CompressedTensor, compressed_b: CompressedTensor, row: int, column: int
+            self, compressed_a: CompressedTensor, compressed_b: CompressedTensor, row: int, column: int
     ) -> float:
         assert (
-            compressed_a.n_dimensions == 2 and compressed_b.n_dimensions == 2
+                compressed_a.n_dimensions == 2 and compressed_b.n_dimensions == 2
         ), "Dot product not defined for dimensions other than 2."
 
         a_block_index = row // self.block_shape[0]
