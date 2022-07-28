@@ -1,5 +1,6 @@
 import itertools
 import math
+import pathlib
 
 import torch
 import tqdm
@@ -10,7 +11,20 @@ from compressed import CompressedBlock, CompressedTensor
 
 
 def _test():
-    pass
+    positions_file = pathlib.Path("data") / "some_tensor.txt"
+    dtype = torch.float32
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    with open(positions_file) as file:
+        positions = torch.tensor(
+            [[float(string) for string in line.split()] for line in file.readlines()[5:]], dtype=dtype, device=device
+        )
+
+    compressor = Compressor(block_shape=(4, 4), dtype=dtype, device=device)
+    compressed_positions = compressor.compress(positions)
+    decompressed_positions = compressor.decompress(compressed_positions)
+
+    print((positions - decompressed_positions).norm(torch.inf))
 
 
 class Compressor:
@@ -58,13 +72,18 @@ class Compressor:
             total=math.prod(blocks_shape),
         ):
             blocks[block_index] = self.compress_block(blocked[block_index])
-        return CompressedTensor(blocks)
+        return CompressedTensor(blocks, tensor.shape)
 
     def decompress(self, compressed: CompressedTensor):
         blocked = torch.empty(compressed.blocks_shape + self.block_shape, dtype=self.dtype, device=self.device)
-        for block_index in tqdm.tqdm(itertools.product(*(range(size) for size in compressed.blocks_shape)), desc="blockwise decompression", total=math.prod(compressed.blocks_shape)):
+        for block_index in tqdm.tqdm(
+            itertools.product(*(range(size) for size in compressed.blocks_shape)),
+            desc="blockwise decompression",
+            total=math.prod(compressed.blocks_shape),
+        ):
             blocked[block_index] = self.decompress_block(compressed[block_index])
-        return self.block_inverse(blocked)
+
+        return eval(f"self.block_inverse(blocked)[{','.join(f':{size}' for size in compressed.original_shape)}]")
 
     def compress_block(self, block: torch.Tensor) -> CompressedBlock:
         first_element, normalized_block = self.normalize(block)

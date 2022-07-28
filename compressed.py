@@ -61,8 +61,9 @@ class CompressedBlock:
 
 
 class CompressedTensor:
-    def __init__(self, blocks: np.array):
+    def __init__(self, blocks: np.array, original_shape: tuple[int, ...]):
         self.blocks = blocks
+        self.original_shape = original_shape
 
     @property
     def n_dimensions(self) -> int:
@@ -86,7 +87,7 @@ class CompressedTensor:
         blocks = np.ndarray(self.blocks_shape, dtype=object)
         for block_index in itertools.product(*(range(size) for size in self.blocks_shape)):
             blocks[block_index] = -self[block_index]
-        return CompressedTensor(blocks)
+        return CompressedTensor(blocks, self.original_shape)
 
     def __add__(self, other):
         return self.blockwise_binary(other, CompressedBlock.__add__)
@@ -113,18 +114,18 @@ class CompressedTensor:
         :param other:
         :return: the dot product between self and other
         """
-        return self.transpose @ other
+        pass
 
     def blockwise_binary(self, other, operation: callable):
         blocks = np.ndarray(self.blocks_shape, dtype=object)
         if isinstance(other, CompressedTensor):
             for block_index in itertools.product(*(range(size) for size in self.blocks_shape)):
                 blocks[block_index] = operation(self[block_index], other[block_index])
-            return CompressedTensor(blocks)
+            return CompressedTensor(blocks, self.original_shape)
         else:
             for block_index in itertools.product(*(range(size) for size in self.blocks_shape)):
                 blocks[block_index] = operation(self[block_index], other)
-            return CompressedTensor(blocks)
+            return CompressedTensor(blocks, self.original_shape)
 
 
 if __name__ == "__main__":
