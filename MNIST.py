@@ -16,12 +16,27 @@ def _test():
 
     a = (dataset.data[0] / 255).to(device)
     b = (dataset.data[1] / 255).to(device)
-    print(a)
+    c = (dataset.data[2] / 255).to(device)
+    d = (dataset.data[3] / 255).to(device)
+    e = (dataset.data[4] / 255).to(device)
+    f = (dataset.data[5] / 255).to(device)
+    g = (dataset.data[6] / 255).to(device)
+    h = (dataset.data[7] / 255).to(device)
+    i = (dataset.data[8] / 255).to(device)
+    j = (dataset.data[9] / 255).to(device)
     #a = torch.zeros(32, 32, dtype=dtype, device=device)
     #b = torch.zeros(32, 32, dtype=dtype, device=device)
 
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
+    compressed_c = compressor.compress(c)
+    compressed_d = compressor.compress(d)
+    compressed_e = compressor.compress(e)
+    compressed_f = compressor.compress(f)
+    compressed_g = compressor.compress(g)
+    compressed_h = compressor.compress(h)
+    compressed_i = compressor.compress(i)
+    compressed_j = compressor.compress(j)
 
     
     
