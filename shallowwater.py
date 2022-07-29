@@ -63,9 +63,10 @@ for timestep in range(500):
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
 
-    decompressed_subtraction = compressor.decompress(compressed_a - compressed_b)
+    subtraction = a - b
+    decompressed_subtraction = compressor.decompress(compressed_b - compressed_a)
     timesteps.append(timestep)
-    diff.append(decompressed_subtraction.norm(torch.inf))
+    diff.append(abs((sum(sum(decompressed_subtraction))/sum(sum(compressor.decompress(compressed_a)))))*100)
 
 plt.plot(numpy.asarray(timesteps), numpy.asarray(diff))
 plt.savefig("mygraph.png")
