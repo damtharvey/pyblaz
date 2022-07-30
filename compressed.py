@@ -61,24 +61,29 @@ class CompressedBlock:
 
 
 class CompressedTensor:
-    def __init__(self, blocks: np.array, original_shape: tuple[int, ...]):
-        self.blocks = blocks
+    def __init__(self, original_shape: tuple[int, ...], first_elements: torch.Tensor, biggest_coefficients: torch.Tensor, indicess: torch.Tensor):
         self.original_shape = original_shape
+        self.first_elements = first_elements
+        self.biggest_coefficients = biggest_coefficients
+        self.indicess = indicess
 
     @property
     def n_dimensions(self) -> int:
-        return len(self.blocks.shape)
+        return len(self.original_shape)
 
     @property
     def blocks_shape(self) -> tuple[int, ...]:
-        return self.blocks.shape
+        return self.first_elements.shape
 
     @property
     def block_shape(self) -> tuple[int, ...]:
-        return self.blocks[(0,) * self.n_dimensions].shape
+        return torch.tensor(self.original_shape) / self.blocks_shape
+
+    # def __getitem__(self, item):
+    #     return CompressedBlock(self.first_elements[item], self.biggest_coefficients[item], self.indicess[item])
 
     def __getitem__(self, item):
-        return self.blocks[item]
+        return self.first_elements[item], self.biggest_coefficients[item], self.indicess[item]
 
     def __setitem__(self, key, value):
         self[key] = value
@@ -116,16 +121,16 @@ class CompressedTensor:
         """
         pass
 
-    def blockwise_binary(self, other, operation: callable):
-        blocks = np.ndarray(self.blocks_shape, dtype=object)
-        if isinstance(other, CompressedTensor):
-            for block_index in itertools.product(*(range(size) for size in self.blocks_shape)):
-                blocks[block_index] = operation(self[block_index], other[block_index])
-            return CompressedTensor(blocks, self.original_shape)
-        else:
-            for block_index in itertools.product(*(range(size) for size in self.blocks_shape)):
-                blocks[block_index] = operation(self[block_index], other)
-            return CompressedTensor(blocks, self.original_shape)
+    # def blockwise_binary(self, other, operation: callable):
+    #     blocks = np.ndarray(self.blocks_shape, dtype=object)
+    #     if isinstance(other, CompressedTensor):
+    #         for block_index in itertools.product(*(range(size) for size in self.blocks_shape)):
+    #             blocks[block_index] = operation(self[block_index], other[block_index])
+    #         return CompressedTensor(blocks, self.original_shape)
+    #     else:
+    #         for block_index in itertools.product(*(range(size) for size in self.blocks_shape)):
+    #             blocks[block_index] = operation(self[block_index], other)
+    #         return CompressedTensor(blocks, self.original_shape)
 
 
 if __name__ == "__main__":
