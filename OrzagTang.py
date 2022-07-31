@@ -8,6 +8,7 @@ import torchvision
 import time
 from tabulate import tabulate
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 rho_1 = []
 with open("data/OrzagTang_singleprecision/1.csv") as csv_file:
@@ -23,8 +24,8 @@ with open("data/OrzagTang_singleprecision/2.csv") as csv_file:
 
 a = torch.FloatTensor(rho_1[:251001])
 b = torch.FloatTensor(rho_2[:251001])
-a = a.view(501, 501)
-b = b.view(501, 501)
+a = a.view(501, 501).to(device)
+b = b.view(501, 501).to(device)
 
 dtype = torch.float64
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -48,12 +49,12 @@ end2 = time.time()
 print(f"Total runtime of the subtraction_compression_decompression is {end2 - begin2} secs")
 
 #-----------------------------Accuracy analysis for subtraction
-print(f"difference between actual subtraction and subtraction in compressed domain = {(subtraction - decompressed_subtraction[:501, :501]).norm(torch.inf)} ")
-print(f"difference between actual subtraction and subtraction after decompressing the data = {(subtraction - subtraction_compression_decompression[:501, :501]).norm(torch.inf)}")
+print(f"difference between actual subtraction and subtraction in compressed domain = {(subtraction - decompressed_subtraction).norm(torch.inf)} ")
+print(f"difference between actual subtraction and subtraction after decompressing the data = {(subtraction - subtraction_compression_decompression).norm(torch.inf)}")
 time1 = end1 - begin1
-accuracy1 = (subtraction - decompressed_subtraction[:501, 501]).norm(torch.inf)
+accuracy1 = (subtraction - decompressed_subtraction).norm(torch.inf)
 time2 = end2 - begin2
-accuracy2 = (subtraction - subtraction_compression_decompression[:501, :501]).norm(torch.inf)
+accuracy2 = (subtraction - subtraction_compression_decompression).norm(torch.inf)
 #---------------------------Time analysis for dot product(cosine difference)
 begin3 = time.time()
 decompressed_dotproduct = compressor.dot_product(compressed_a, compressed_b, 5, 6)

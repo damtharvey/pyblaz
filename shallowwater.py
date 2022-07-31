@@ -4,6 +4,12 @@ import numpy
 import torch
 diff = []
 timesteps = []
+
+dtype = torch.float64
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+compressor = Compressor(block_shape=(4, 4), dtype=dtype, device=device)
+
 for timestep in range(500):
     txt_file0 = open("./ShallowWatersEquations/output/"+str(timestep)+".txt", "r")
     file_content0 = txt_file0.read()
@@ -51,14 +57,8 @@ for timestep in range(500):
             temp1.append(float(j))
         final_list1.append(temp1)
 
-
-    dtype = torch.float64
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    compressor = Compressor(block_shape=(4, 4), dtype=dtype, device=device)
-
-    a = torch.FloatTensor(final_list0)
-    b = torch.FloatTensor(final_list1)
+    a = torch.FloatTensor(final_list0).to(device)
+    b = torch.FloatTensor(final_list1).to(device)
 
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)

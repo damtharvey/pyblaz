@@ -1,21 +1,26 @@
-import itertools
-
 import torch
-import numpy as np
+
+
+INDICES_RADIUS = {
+    torch.int8: (1 << 7) - 1,
+    torch.int16: (1 << 15) - 1,
+    torch.int32: (1 << 31) - 1,
+    torch.int64: (1 << 63) - 1,
+}
 
 
 def _test():
     pass
 
 
-class CompressedTensor:
-    INDICES_RADIUS = {
-        torch.int8: (1 << 7) - 1,
-        torch.int16: (1 << 15) - 1,
-        torch.int32: (1 << 31) - 1,
-        torch.int64: (1 << 63) - 1,
-    }
+class CompressedBlock:
+    def __init__(self, first_element, biggest_coefficient, indices):
+        self.first_element = first_element
+        self.biggest_coefficient = biggest_coefficient
+        self.indices = indices
 
+
+class CompressedTensor:
     def __init__(
         self,
         original_shape: tuple[int, ...],
@@ -41,20 +46,17 @@ class CompressedTensor:
         return torch.tensor(self.original_shape) / torch.tensor(self.blocks_shape)
 
     def __getitem__(self, item):
-        return self.first_elements[item], self.biggest_coefficients[item], self.indicess[item]
+        return CompressedBlock(self.first_elements[item], self.biggest_coefficients[item], self.indicess[item])
 
-    def __setitem__(self, key, value):
-        self[key] = value
+    def __setitem__(self, key, value: CompressedBlock):
+        self.first_elements[key] = value.first_element
+        self.biggest_coefficients[key] = value.biggest_coefficient
+        self.indicess[key] = value.indices
 
     def __neg__(self):
-        # blocks = np.ndarray(self.blocks_shape, dtype=object)
-        # for block_index in itertools.product(*(range(size) for size in self.blocks_shape)):
-        #     blocks[block_index] = -self[block_index]
-        # return CompressedTensor(blocks, self.original_shape)
         return CompressedTensor(self.original_shape, -self.first_elements, self.biggest_coefficients, -self.indicess)
 
     def __add__(self, other):
-        # return self.blockwise_binary(other, CompressedBlock.__add__)
         indices = self.indicess * eval(
             f"self.biggest_coefficients[{':,' * self.n_dimensions + 'None,' * self.n_dimensions}]"
         ) + other.indicess * eval(
@@ -62,7 +64,7 @@ class CompressedTensor:
         )
         proportion_of_radius = (
             indices.norm(torch.inf, tuple(range(self.n_dimensions, 2 * self.n_dimensions)))
-            / self.INDICES_RADIUS[self.indicess.dtype]
+            / INDICES_RADIUS[self.indicess.dtype]
         )
         indices = torch.nan_to_num(
             (indices / eval(f"proportion_of_radius[{':,' * other.n_dimensions + 'None,' * other.n_dimensions}]"))
@@ -94,21 +96,6 @@ class CompressedTensor:
 
     def __rmul__(self, other):
         return self * other
-
-    def __matmul__(self, other):
-        """
-        :param other:
-        :return: the matrix multiplication self @ other
-        """
-        pass
-
-    def dot(self, other):
-        """
-
-        :param other:
-        :return: the dot product between self and other
-        """
-        pass
 
 
 if __name__ == "__main__":
