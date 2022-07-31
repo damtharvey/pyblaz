@@ -55,42 +55,28 @@ class Compressor:
         """
         This isn't blockwise complete compression. Some things are better done over the whole tensor.
         """
-        assert self.n_dimensions == len(
-            tensor.shape
-        ), f"Compressor dimensionality ({self.n_dimensions}) must match tensor dimensionality ({len(tensor.shape)})."
+        assert self.n_dimensions == len(tensor.shape),f"Compressor dimensionality ({self.n_dimensions}) must match tensor dimensionality ({len(tensor.shape)})."
 
-        padded = torch.nn.functional.pad(
-            tensor,
-            list(
-                itertools.chain(
-                    *((0, (block_size - size) % block_size) for size, block_size in zip(tensor.shape, self.block_shape))
-                )
-            ),
-        )
+        blocked = self.block(tensor)
+        blocks_shape = blocked.shape[: self.n_dimensions]
 
-        blocks_shape = (
-            *(
-                # don't need + block_size - 1 because it's padded
-                unblocked_size >> log_2_block_size
-                for unblocked_size, log_2_block_size in zip(padded.shape, self.log_2_block_shape)
-            ),
-        )
-
-        first_elements = self.get_first_elements(blocks_shape, padded)
-
+        # first_elements = self.get_first_elements(blocks_shape, padded)
+        first_elements = torch.empty(blocks_shape, dtype=self.dtype, device=self.device)
         biggest_coefficients = torch.empty(blocks_shape, dtype=self.dtype, device=self.device)
-        indicess = torch.empty(blocks_shape + self.block_shape, dtype=self.index_dtype, device=self.device)
+        indicess = torch.empty(blocked.shape, dtype=self.index_dtype, device=self.device)
 
         for block_index in tqdm.tqdm(
             itertools.product(*(range(size) for size in blocks_shape)),
             desc="blockwise compression",
             total=math.prod(blocks_shape),
         ):
-            index_range_str = ",".join(
-                f"{block_index_element * block_size}:{block_index_element * block_size + block_size}"
-                for block_index_element, block_size in zip(block_index, self.block_shape)
-            )
-            normalized_block = self.normalize(eval(f"padded[{index_range_str}]"))
+            # index_range_str = ",".join(
+            #     f"{block_index_element * block_size}:{block_index_element * block_size + block_size}"
+            #     for block_index_element, block_size in zip(block_index, self.block_shape)
+            # )
+            # normalized_block = self.normalize(eval(f"padded[{index_range_str}]"))
+            first_elements[block_index] = blocked[block_index + (0,) * self.n_dimensions]
+            normalized_block = self.normalize(blocked[block_index])
             coefficients = self.block_transform(normalized_block)
             indicess[block_index], biggest_coefficients[block_index] = self.bin(coefficients)
         indicess = self.center(indicess)
@@ -107,6 +93,8 @@ class Compressor:
         """
         This isn't blockwise complete decompression. Some things are better done over the whole tensor.
         """
+        assert self.n_dimensions == compressed.n_dimensions, f"Compressor dimensionality ({self.n_dimensions}) must match tensor dimensionality ({compressed.n_dimensions})."
+
         decompressed = torch.empty(
             tuple(
                 ((size + block_size - 1) >> log_2_block_size) * block_size
@@ -158,25 +146,35 @@ class Compressor:
         :param unblocked: uncompressed tensor
         :return: tensor of shape blocks' shape followed by block shape.
         """
-        blocked_shape = (
-            *(
-                (unblocked_size + block_size - 1) // block_size
-                for unblocked_size, block_size in zip(unblocked.shape, self.block_shape)
-            ),
-            *self.block_shape,
-        )
-        blocked = torch.zeros(blocked_shape, dtype=self.dtype, device=self.device)
-        for unblocked_indices in tqdm.tqdm(
-                itertools.product(*(range(size) for size in unblocked.shape)), desc="blocking",
-                total=torch.numel(unblocked)
-        ):
-            blocked[
-                (
-                    *(index >> log_2_size for index, log_2_size in zip(unblocked_indices, self.log_2_block_shape)),
-                    *(index % size for index, size in zip(unblocked_indices, self.block_shape)),
+        padded = torch.nn.functional.pad(
+            unblocked,
+            list(
+                itertools.chain(
+                    *(
+                        (0, (block_size - size) % block_size)
+                        for size, block_size in zip(unblocked.shape, self.block_shape)
+                    )
                 )
-            ] = unblocked[unblocked_indices]
+            ),
+        )
 
+        blocks_shape = tuple(
+            unblocked_size >> log_2_block_size
+            for unblocked_size, log_2_block_size in zip(padded.shape, self.log_2_block_shape)
+        )
+        blocked_shape = blocks_shape + self.block_shape
+
+        blocked = torch.zeros(blocked_shape, dtype=self.dtype, device=self.device)
+        for block_index in tqdm.tqdm(
+            itertools.product(*(range(size) for size in blocks_shape)),
+            desc="blocking",
+            total=math.prod(blocks_shape),
+        ):
+            index_range_str = ",".join(
+                f"{block_index_element * block_size} : {block_index_element * block_size + block_size}"
+                for block_index_element, block_size in zip(block_index, self.block_shape)
+            )
+            blocked[block_index] = eval(f"padded[{index_range_str}]")
         return blocked
 
     def block_inverse(self, blocked: torch.Tensor) -> torch.Tensor:
