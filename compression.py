@@ -1,7 +1,6 @@
 import functools
 import itertools
 import math
-from datetime import datetime
 
 import torch
 import torch.nn.functional
@@ -76,7 +75,9 @@ class Compressor:
                 for unblocked_size, log_2_block_size in zip(padded.shape, self.log_2_block_shape)
             ),
         )
-        first_elements = torch.empty(blocks_shape, dtype=self.dtype, device=self.device)
+
+        first_elements = self.get_first_elements(blocks_shape, padded)
+
         biggest_coefficients = torch.empty(blocks_shape, dtype=self.dtype, device=self.device)
         indicess = torch.empty(blocks_shape + self.block_shape, dtype=self.index_dtype, device=self.device)
 
@@ -89,13 +90,18 @@ class Compressor:
                 f"{block_index_element * block_size}:{block_index_element * block_size + block_size}"
                 for block_index_element, block_size in zip(block_index, self.block_shape)
             )
-            first_elements[block_index] = padded[tuple(torch.tensor(block_index) * torch.tensor(self.block_shape))]
             normalized_block = self.normalize(eval(f"padded[{index_range_str}]"))
             coefficients = self.block_transform(normalized_block)
             indicess[block_index], biggest_coefficients[block_index] = self.bin(coefficients)
         indicess = self.center(indicess)
 
         return CompressedTensor(tensor.shape, first_elements, biggest_coefficients, indicess.type(self.index_dtype))
+
+    def get_first_elements(self, blocks_shape, padded):
+        tile = torch.zeros(self.block_shape, dtype=torch.bool)
+        tile[(0,) * self.n_dimensions] = True
+        first_elements = padded[torch.tile(tile, blocks_shape)].reshape(blocks_shape)
+        return first_elements
 
     def decompress(self, compressed: CompressedTensor):
         """
@@ -144,6 +150,34 @@ class Compressor:
 
     def dot_product_block(self, a: CompressedBlock, b: CompressedBlock, row: int, column: int) -> float:
         return self.decompress_block(a)[row] @ self.decompress_block(b)[:, column]
+
+    def block(self, unblocked: torch.Tensor) -> torch.Tensor:
+        """
+        Section II.a
+        Block Splitting
+        :param unblocked: uncompressed tensor
+        :return: tensor of shape blocks' shape followed by block shape.
+        """
+        blocked_shape = (
+            *(
+                (unblocked_size + block_size - 1) // block_size
+                for unblocked_size, block_size in zip(unblocked.shape, self.block_shape)
+            ),
+            *self.block_shape,
+        )
+        blocked = torch.zeros(blocked_shape, dtype=self.dtype, device=self.device)
+        for unblocked_indices in tqdm.tqdm(
+                itertools.product(*(range(size) for size in unblocked.shape)), desc="blocking",
+                total=torch.numel(unblocked)
+        ):
+            blocked[
+                (
+                    *(index >> log_2_size for index, log_2_size in zip(unblocked_indices, self.log_2_block_shape)),
+                    *(index % size for index, size in zip(unblocked_indices, self.block_shape)),
+                )
+            ] = unblocked[unblocked_indices]
+
+        return blocked
 
     def block_inverse(self, blocked: torch.Tensor) -> torch.Tensor:
         """
