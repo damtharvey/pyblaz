@@ -16,28 +16,31 @@ def _test():
 
     compressor = Compressor(block_shape=(8, 8), n_bins=256, dtype=dtype, device=device)
 
-    x = torch.randn(16, 16, dtype=dtype, device=device) * 10
+    x = torch.arange(64, dtype=dtype, device=device).reshape(8, 8)
+    # x = torch.randn(128, 128, dtype=dtype, device=device)
     compressed_x = compressor.compress(x)
 
     # decompressed_x = compressor.decompress(compressed_x)
-    #
+    # print((compressor.decompress(compressed_x - compressed_x)).norm(torch.inf))
     # print((x - decompressed_x).norm(torch.inf))
+    #
     # print(
     #     f"{compressor.bin_inverse_time=}\n"
     #     f"{compressor.block_transform_inverse_time=}\n"
     #     f"{compressor.normalize_inverse_time=}"
     # )
 
-    # compressed_negated_x = -compressed_x
-    # print((x + compressor.decompress(compressed_negated_x)).norm(torch.inf))
+    compressed_twice_x = -2 * compressed_x
+    print((-2 * x - compressor.decompress(compressed_twice_x)).norm(torch.inf))
 
-    x = torch.tensor([[0.1 * i * j for j in range(1, 17)] for i in range(1, 17)], dtype=dtype, device=device)
-    compressed_x = compressor.compress(x)
-    y = torch.tensor([[0.2 * i * j for j in range(1, 17)] for i in range(1, 17)], dtype=dtype, device=device)
-    compressed_y = compressor.compress(x)
-    compressed_sum = compressed_x + compressed_y
-    decompressed_sum = compressor.decompress(compressed_sum)
-    print(((x + y) - decompressed_sum).norm(torch.inf))
+    # # x = torch.tensor([[0.1 * i * j for j in range(1, 17)] for i in range(1, 17)], dtype=dtype, device=device)
+    # compressed_x = compressor.compress(x)
+    # # y = torch.tensor([[0.2 * i * j for j in range(1, 17)] for i in range(1, 17)], dtype=dtype, device=device)
+    # compressed_y = compressor.compress(y)
+    # compressed_sum = compressed_x + compressed_y
+    # decompressed_sum = compressor.decompress(compressed_sum)
+    # uncompressed_sum = x + y
+    # print((uncompressed_sum - decompressed_sum).norm(torch.inf))
 
 
 class Compressor:
@@ -111,7 +114,7 @@ class Compressor:
             indicess[block_index], biggest_coefficients[block_index] = self.bin(coefficients)
         indicess = self.center(indicess)
 
-        return CompressedTensor(tensor.shape, first_elements, biggest_coefficients, indicess)
+        return CompressedTensor(tensor.shape, first_elements, biggest_coefficients, indicess.type(self.index_dtype))
 
     def decompress(self, compressed: CompressedTensor):
         decompressed = torch.empty(compressed.blocks_shape + self.block_shape, dtype=self.dtype, device=self.device)
@@ -122,10 +125,6 @@ class Compressor:
             desc="blockwise decompression",
             total=math.prod(compressed.blocks_shape),
         ):
-            # index_range_str = ",".join(
-            #     f"{block_index_element * block_size} : {block_index_element * block_size + block_size}"
-            #     for block_index_element, block_size in zip(block_index, self.block_shape)
-            # )
             start_time = time.time()
             coefficients = self.bin_inverse(uncentered[block_index], compressed.biggest_coefficients[block_index])
             self.bin_inverse_time += time.time() - start_time
@@ -279,7 +278,7 @@ class Compressor:
             dtype=self.dtype,
             device=self.device,
         )
-        return (coefficients.unsqueeze(-1) - bins).abs().min(-1).indices.type(self.index_dtype), biggest_coefficient
+        return (coefficients.unsqueeze(-1) - bins).abs().min(-1).indices.to(self.index_dtype), biggest_coefficient
 
     def bin_inverse(self, indices: torch.Tensor, biggest_coefficient: float) -> torch.Tensor:
         """
