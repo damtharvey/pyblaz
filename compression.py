@@ -55,13 +55,15 @@ class Compressor:
         """
         This isn't blockwise complete compression. Some things are better done over the whole tensor.
         """
-        assert self.n_dimensions == len(tensor.shape),f"Compressor dimensionality ({self.n_dimensions}) must match tensor dimensionality ({len(tensor.shape)})."
+        assert self.n_dimensions == len(
+            tensor.shape
+        ), f"Compressor dimensionality ({self.n_dimensions}) must match tensor dimensionality ({len(tensor.shape)})."
 
         blocked = self.block(tensor)
         blocks_shape = blocked.shape[: self.n_dimensions]
 
-        # first_elements = self.get_first_elements(blocks_shape, padded)
-        first_elements = torch.empty(blocks_shape, dtype=self.dtype, device=self.device)
+        first_elements = eval(f"blocked[{':,' * self.n_dimensions + '0,' * self.n_dimensions}]")
+
         biggest_coefficients = torch.empty(blocks_shape, dtype=self.dtype, device=self.device)
         indicess = torch.empty(blocked.shape, dtype=self.index_dtype, device=self.device)
 
@@ -75,7 +77,7 @@ class Compressor:
             #     for block_index_element, block_size in zip(block_index, self.block_shape)
             # )
             # normalized_block = self.normalize(eval(f"padded[{index_range_str}]"))
-            first_elements[block_index] = blocked[block_index + (0,) * self.n_dimensions]
+            # first_elements[block_index] = blocked[block_index + (0,) * self.n_dimensions]
             normalized_block = self.normalize(blocked[block_index])
             coefficients = self.block_transform(normalized_block)
             indicess[block_index], biggest_coefficients[block_index] = self.bin(coefficients)
@@ -83,19 +85,21 @@ class Compressor:
 
         return CompressedTensor(tensor.shape, first_elements, biggest_coefficients, indicess.type(self.index_dtype))
 
-    def get_first_elements(self, blocks_shape, padded):
-        tile = torch.zeros(self.block_shape, dtype=torch.bool)
-        tile[(0,) * self.n_dimensions] = True
-        first_elements = padded[torch.tile(tile, blocks_shape)].reshape(blocks_shape)
-        return first_elements
+    # def get_first_elements(self, blocks_shape, padded):
+    #     tile = torch.zeros(self.block_shape, dtype=torch.bool)
+    #     tile[(0,) * self.n_dimensions] = True
+    #     first_elements = padded[torch.tile(tile, blocks_shape)].reshape(blocks_shape)
+    #     return first_elements
 
     def decompress(self, compressed: CompressedTensor):
         """
         This isn't blockwise complete decompression. Some things are better done over the whole tensor.
         """
-        assert self.n_dimensions == compressed.n_dimensions, f"Compressor dimensionality ({self.n_dimensions}) must match tensor dimensionality ({compressed.n_dimensions})."
+        assert (
+            self.n_dimensions == compressed.n_dimensions
+        ), f"Compressor dimensionality ({self.n_dimensions}) must match tensor dimensionality ({compressed.n_dimensions})."
 
-        decompressed = torch.empty(
+        decompressed = torch.empty(  # Don't kill
             tuple(
                 ((size + block_size - 1) >> log_2_block_size) * block_size
                 for size, block_size, log_2_block_size in zip(
@@ -114,7 +118,7 @@ class Compressor:
         ):
             coefficients = self.bin_inverse(uncentered[block_index], compressed.biggest_coefficients[block_index])
             differences = self.block_transform(coefficients, inverse=True)
-            block = self.normalize_inverse(compressed.first_elements[block_index], differences)
+            block = self.normalize_inverse(compressed.first_elements[block_index], differences)  # Don't kill
             index_range_str = ",".join(
                 f"{block_index_element * block_size} : {block_index_element * block_size + block_size}"
                 for block_index_element, block_size in zip(block_index, self.block_shape)
@@ -152,7 +156,7 @@ class Compressor:
                 itertools.chain(
                     *(
                         (0, (block_size - size) % block_size)
-                        for size, block_size in zip(unblocked.shape, self.block_shape)
+                        for size, block_size in zip(reversed(unblocked.shape), reversed(self.block_shape))
                     )
                 )
             ),
