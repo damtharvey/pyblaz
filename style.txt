@@ -1,0 +1,3 @@
+PyBlaz code should be in Black style with 120 character maximum line length.
+
+We tend to name things whole real words.

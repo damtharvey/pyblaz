@@ -217,9 +217,8 @@ class Compressor:
             transformer_tensor = self.transformer_tensor if not inverse else self.inverse_transformer_tensor
         else:
             transform_tensor_path = self.transform_tensor_directory / (
-                "x".join(str(size) for size in self.block_shape)
-                + f"_{n_coefficients}c_{self.dtype.__repr__()[6:]}_"
-                  f"{'inverse_' if inverse else ''}{self.transform.__name__}_tensor.pth"
+                "x".join(str(size) for size in self.block_shape) + f"_{n_coefficients}c_{self.dtype.__repr__()[6:]}_"
+                f"{'inverse_' if inverse else ''}{self.transform.__name__}_tensor.pth"
             )
             if transform_tensor_path.exists():
                 transformer_tensor = torch.load(transform_tensor_path).to(self.device)

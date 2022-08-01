@@ -10,13 +10,13 @@ from tabulate import tabulate
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 rho_1 = []
-with open("data/OrzagTang_singleprecision/1.csv") as csv_file:
+with open("../data/OrzagTang_singleprecision/1.csv") as csv_file:
     next(csv_file)
     for row in csv.reader(csv_file, delimiter=","):
         rho_1.append(float(row[0]))
 
 rho_2 = []
-with open("data/OrzagTang_singleprecision/2.csv") as csv_file:
+with open("../data/OrzagTang_singleprecision/2.csv") as csv_file:
     next(csv_file)
     for row in csv.reader(csv_file, delimiter=","):
         rho_2.append(float(row[0]))
