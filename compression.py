@@ -1,6 +1,7 @@
 import functools
 import itertools
 import math
+import pathlib
 
 import torch
 import torch.nn.functional
@@ -29,7 +30,6 @@ class Compressor:
     * Variable data type for coefficient indices
 
     To do:
-    * See whether blocking and unblocking can be faster or skipped.
     * Dropping certain indices to save space. Currently, we use all indices.
     """
 
@@ -40,6 +40,7 @@ class Compressor:
         dtype: torch.dtype = torch.float32,
         index_dtype: torch.dtype = torch.int8,
         device: torch.device = torch.device("cuda"),
+        transform_tensor_directory: pathlib.Path = pathlib.Path("temp") / "transform_tensors",
     ):
         self.block_shape = block_shape
         self.log_2_block_shape = tuple(size.bit_length() - 1 for size in self.block_shape)
@@ -48,6 +49,7 @@ class Compressor:
         self.dtype = dtype
         self.index_dtype = index_dtype
         self.device = device
+        self.transform_tensor_directory = transform_tensor_directory
 
         self.n_coefficients = None
         self.transformer_tensor = None
@@ -114,16 +116,17 @@ class Compressor:
         blocked_shape = blocks_shape + self.block_shape
 
         blocked = torch.zeros(blocked_shape, dtype=self.dtype, device=self.device)
-        for block_index in tqdm.tqdm(
-            itertools.product(*(range(size) for size in blocks_shape)),
+        for intrablock_index in tqdm.tqdm(
+            itertools.product(*(range(size) for size in self.block_shape)),
             desc="blocking",
-            total=math.prod(blocks_shape),
+            total=math.prod(self.block_shape),
         ):
-            index_range_str = ",".join(
-                f"{block_index_element * block_size} : {block_index_element * block_size + block_size}"
-                for block_index_element, block_size in zip(block_index, self.block_shape)
+            selection_string = ",".join(
+                f"{intrablock_index_element}::{block_size}"
+                for intrablock_index_element, block_size in zip(intrablock_index, self.block_shape)
             )
-            blocked[block_index] = eval(f"padded[{index_range_str}]")
+            blocked[(...,) + intrablock_index] = eval(f"padded[{selection_string}]")
+
         return blocked
 
     def block_inverse(self, blocked: torch.Tensor) -> torch.Tensor:
@@ -137,16 +140,16 @@ class Compressor:
             *(n_blocks * size for n_blocks, size in zip(blocked.shape[: self.n_dimensions], self.block_shape)),
         )
         unblocked = torch.zeros(unblocked_shape, dtype=self.dtype, device=self.device)
-        for block_index in tqdm.tqdm(
-            itertools.product(*(range(size) for size in blocked.shape[: self.n_dimensions])),
-            desc="unblocking",
-            total=math.prod(blocked.shape[: self.n_dimensions]),
+        for intrablock_index in tqdm.tqdm(
+                itertools.product(*(range(size) for size in self.block_shape)),
+                desc="blocking",
+                total=math.prod(self.block_shape),
         ):
-            index_range_str = ",".join(
-                f"{block_index_element * block_size} : {block_index_element * block_size + block_size}"
-                for block_index_element, block_size in zip(block_index, self.block_shape)
+            selection_string = ",".join(
+                f"{intrablock_index_element}::{block_size}"
+                for intrablock_index_element, block_size in zip(intrablock_index, self.block_shape)
             )
-            exec(f"unblocked[{index_range_str}] = blocked[{block_index}]")
+            exec(f"unblocked[{selection_string}] = blocked[(...,) + intrablock_index]")
 
         return unblocked
 
@@ -227,45 +230,55 @@ class Compressor:
         if not n_coefficients:
             n_coefficients = math.prod(self.block_shape)
 
-        if (
-            (not inverse and self.transformer_tensor is None)
-            or (inverse and self.inverse_transformer_tensor is None)
-            or (not self.n_coefficients or self.n_coefficients != n_coefficients)
+        if n_coefficients == self.n_coefficients and (
+            (self.transformer_tensor and not inverse) or (self.inverse_transformer_tensor and inverse)
         ):
-            transformer_tensor = torch.zeros(
-                *self.block_shape * 2,
-                dtype=self.dtype,
-                device=self.device,
+            transformer_tensor = self.transformer_tensor if not inverse else self.inverse_transformer_tensor
+        else:
+            transform_tensor_path = self.transform_tensor_directory / (
+                "x".join(str(size) for size in self.block_shape)
+                + f"_{n_coefficients}c_{'inverse_' if inverse else ''}{self.transform.__name__}_tensor.pth"
             )
-
-            all_frequency_indices = sorted(
-                itertools.product(*(range(size) for size in self.block_shape)),
-                key=lambda x: sum(x),
-            )[:n_coefficients]
-
-            for element_indices in tqdm.tqdm(
-                itertools.product(*(range(size) for size in self.block_shape)),
-                desc=f"making {'inverse ' if inverse else ''}block transformer",
-                total=math.prod(self.block_shape),
-            ):
-                for frequency_indices in all_frequency_indices:
-                    transformer_tensor[(*element_indices, *frequency_indices)] = math.prod(
-                        self.transform(size, element_index, frequency_index, inverse)
-                        for size, element_index, frequency_index in zip(
-                            self.block_shape, element_indices, frequency_indices
-                        )
-                    )
-            if not inverse:
-                self.transformer_tensor = transformer_tensor
+            if transform_tensor_path.exists():
+                transformer_tensor = torch.load(transform_tensor_path)
             else:
-                self.inverse_transformer_tensor = transformer_tensor
-            self.n_coefficients = n_coefficients
+                transformer_tensor = torch.zeros(
+                    *self.block_shape * 2,
+                    dtype=self.dtype,
+                    device=self.device,
+                )
+
+                all_frequency_indices = sorted(
+                    itertools.product(*(range(size) for size in self.block_shape)),
+                    key=lambda x: sum(x),
+                )[:n_coefficients]
+
+                for element_indices in tqdm.tqdm(
+                    itertools.product(*(range(size) for size in self.block_shape)),
+                    desc=f"making {'inverse ' if inverse else ''}block transformer",
+                    total=math.prod(self.block_shape),
+                ):
+                    for frequency_indices in all_frequency_indices:
+                        transformer_tensor[(*element_indices, *frequency_indices)] = math.prod(
+                            self.transform(size, element_index, frequency_index, inverse)
+                            for size, element_index, frequency_index in zip(
+                                self.block_shape, element_indices, frequency_indices
+                            )
+                        )
+
+                if not inverse:
+                    self.transformer_tensor = transformer_tensor
+                else:
+                    self.inverse_transformer_tensor = transformer_tensor
+
+                self.transform_tensor_directory.mkdir(parents=True, exist_ok=True)
+                torch.save(transformer_tensor, transform_tensor_path)
 
         transformed = torch.einsum(
             blocked_tensor,
             # blocks, intrablock
             tuple(range(2 * self.n_dimensions)),
-            self.transformer_tensor if not inverse else self.inverse_transformer_tensor,
+            transformer_tensor,
             # intrablock, coefficients
             tuple(range(self.n_dimensions, 3 * self.n_dimensions)),
             # blocks, coefficients

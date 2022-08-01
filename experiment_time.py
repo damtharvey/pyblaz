@@ -7,8 +7,8 @@ from datetime import datetime
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dimensions", type=int, default=3)
-    parser.add_argument("--block-size", type=int, default=4, help="size of a hypercubic block")
+    parser.add_argument("--dimensions", type=int, default=2)
+    parser.add_argument("--block-size", type=int, default=8, help="size of a hypercubic block")
     parser.add_argument(
         "--index-dtype",
         type=str,
@@ -28,9 +28,8 @@ def main():
         index_dtype=index_dtypes[args.index_dtype],
         device=device,
     )
-
-    x = torch.randn(16, 16, 32, dtype=dtype, device=device)
-    y = torch.randn(16, 16, 32, dtype=dtype, device=device)
+    x = torch.randn(8192, 8192, dtype=dtype, device=device)
+    y = torch.randn(8192, 8192, dtype=dtype, device=device)
     # x = torch.tensor([[0.1 * i * j for j in range(16)] for i in range(16)], dtype=dtype, device=device)
     # y = torch.tensor([[0.2 * i * j for j in range(16)] for i in range(16)], dtype=dtype, device=device)
 
