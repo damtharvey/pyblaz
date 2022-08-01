@@ -69,7 +69,7 @@ class Compressor:
         first_elements = blocked[(...,) + (0,) * self.n_dimensions]
 
         start_time = time.time()
-        differences = torch.empty(blocked.shape, dtype=self.dtype, device=self.device)
+        differences = torch.zeros(blocked.shape, dtype=self.dtype, device=self.device)
         for n_slice_indices in range(1, self.n_dimensions + 1):
             for slice_directions in self.slice_directions_combinations(n_slice_indices):
                 assignee_index = ["1:" if index in slice_directions else "0" for index in range(self.n_dimensions)]
