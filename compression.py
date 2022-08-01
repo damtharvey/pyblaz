@@ -222,7 +222,7 @@ class Compressor:
                   f"{'inverse_' if inverse else ''}{self.transform.__name__}_tensor.pth"
             )
             if transform_tensor_path.exists():
-                transformer_tensor = torch.load(transform_tensor_path)
+                transformer_tensor = torch.load(transform_tensor_path).to(self.device)
             else:
                 transformer_tensor = torch.zeros(
                     *self.block_shape * 2,
