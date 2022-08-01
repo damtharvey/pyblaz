@@ -6,7 +6,6 @@ import pathlib
 import torch
 import torch.nn.functional
 import tqdm
-import numpy as np
 
 import compressed
 import transforms
@@ -116,11 +115,7 @@ class Compressor:
         blocked_shape = blocks_shape + self.block_shape
 
         blocked = torch.zeros(blocked_shape, dtype=self.dtype, device=self.device)
-        for intrablock_index in tqdm.tqdm(
-            itertools.product(*(range(size) for size in self.block_shape)),
-            desc="blocking",
-            total=math.prod(self.block_shape),
-        ):
+        for intrablock_index in itertools.product(*(range(size) for size in self.block_shape)):
             selection_string = ",".join(
                 f"{intrablock_index_element}::{block_size}"
                 for intrablock_index_element, block_size in zip(intrablock_index, self.block_shape)
@@ -140,11 +135,7 @@ class Compressor:
             *(n_blocks * size for n_blocks, size in zip(blocked.shape[: self.n_dimensions], self.block_shape)),
         )
         unblocked = torch.zeros(unblocked_shape, dtype=self.dtype, device=self.device)
-        for intrablock_index in tqdm.tqdm(
-                itertools.product(*(range(size) for size in self.block_shape)),
-                desc="blocking",
-                total=math.prod(self.block_shape),
-        ):
+        for intrablock_index in itertools.product(*(range(size) for size in self.block_shape)):
             selection_string = ",".join(
                 f"{intrablock_index_element}::{block_size}"
                 for intrablock_index_element, block_size in zip(intrablock_index, self.block_shape)
@@ -187,31 +178,21 @@ class Compressor:
         :param differences: blocked average differences of the subsequent elements from the previous elements
         :returns: average cumulative sum of the elements in differences.
         """
-        block_indices = tuple(itertools.product(*(range(size) for size in differences.shape[: self.n_dimensions])))
-
-        decompressed = differences.detach().clone()
-        decompressed[(...,) + (0,) * self.n_dimensions] = first_elements
+        unnormalized = differences.detach()
+        unnormalized[(...,) + (0,) * self.n_dimensions] = first_elements
         for n_slice_indices in range(1, self.n_dimensions + 1):
             for slice_directions in self._slice_directions_combinations(n_slice_indices):
                 index_groups = self._index_groups(slice_directions, self.block_shape)
                 for index_group in index_groups:
                     assignee_indices = torch.tensor(index_group, dtype=torch.int64)
-                    assignee_indices = torch.cat(
-                        (torch.tensor(block_indices), assignee_indices.expand(len(block_indices), -1)), 1
-                    )
-
                     for direction in slice_directions:
                         adjacent_indices = assignee_indices.clone()
-                        adjacent_indices[:, self.n_dimensions + direction] -= 1
-                        flattened_index = np.ravel_multi_index(tuple(adjacent_indices.T.numpy()), decompressed.shape)
-                        flattened_index_tensor = torch.tensor(flattened_index, device=self.device)
-                        decompressed[(...,) + index_group] += (
-                            torch.take(decompressed, flattened_index_tensor).view(
-                                differences.shape[: self.n_dimensions]
-                            )
-                            / n_slice_indices
+                        adjacent_indices[direction] -= 1
+                        unnormalized[(...,) + index_group] += (
+                            unnormalized[(...,) + tuple(adjacent_indices)] / n_slice_indices
                         )
-        return decompressed
+
+        return unnormalized
 
     def blockwise_transform(
         self, blocked_tensor: torch.Tensor, n_coefficients: int = None, inverse=False
@@ -237,7 +218,8 @@ class Compressor:
         else:
             transform_tensor_path = self.transform_tensor_directory / (
                 "x".join(str(size) for size in self.block_shape)
-                + f"_{n_coefficients}c_{'inverse_' if inverse else ''}{self.transform.__name__}_tensor.pth"
+                + f"_{n_coefficients}c_{self.dtype.__repr__()[6:]}_"
+                  f"{'inverse_' if inverse else ''}{self.transform.__name__}_tensor.pth"
             )
             if transform_tensor_path.exists():
                 transformer_tensor = torch.load(transform_tensor_path)
@@ -393,21 +375,16 @@ class Compressor:
         :return: inverse of the normalized block
         """
         unnormalized = block.detach()
-        # The first element of the normalized block should be close to 0.
-        # We can replace it with the first element in the unnormalized tensor.
         unnormalized[(0,) * self.n_dimensions] = first_element
-
         for n_slice_indices in range(1, self.n_dimensions + 1):
             for slice_directions in self._slice_directions_combinations(n_slice_indices):
-                index_groups = self._index_groups(slice_directions, unnormalized.shape)
+                index_groups = self._index_groups(slice_directions, self.block_shape)
                 for index_group in index_groups:
-                    assignee_indices = np.array(index_group)
+                    assignee_indices = torch.tensor(index_group, dtype=torch.int64)
                     for direction in slice_directions:
-                        adjacent_indices = assignee_indices.copy().T
+                        adjacent_indices = assignee_indices.clone()
                         adjacent_indices[direction] -= 1
-                        flattened_index = np.ravel_multi_index(adjacent_indices, self.block_shape)
-                        flattened_index_tensor = torch.tensor(flattened_index, device=self.device)
-                        unnormalized[index_group] += torch.take(unnormalized, flattened_index_tensor) / n_slice_indices
+                        unnormalized[index_group] += unnormalized[tuple(adjacent_indices)] / n_slice_indices
 
         return unnormalized
 

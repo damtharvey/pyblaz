@@ -8,7 +8,7 @@ from datetime import datetime
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dimensions", type=int, default=2)
-    parser.add_argument("--block-size", type=int, default=8, help="size of a hypercubic block")
+    parser.add_argument("--block-size", type=int, default=4, help="size of a hypercubic block")
     parser.add_argument(
         "--index-dtype",
         type=str,
