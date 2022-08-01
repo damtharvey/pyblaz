@@ -67,6 +67,6 @@ for timestep in range(500):
     decompressed_subtraction = compressor.decompress(compressed_b - compressed_a)
     timesteps.append(timestep)
     diff.append((abs((sum(sum(decompressed_subtraction))/sum(sum(compressor.decompress(compressed_a)))))*100).cpu().item())
-
+    
 plt.plot(numpy.asarray(timesteps), numpy.asarray(diff))
 plt.savefig("mygraph.png")

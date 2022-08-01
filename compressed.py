@@ -45,13 +45,13 @@ class CompressedTensor:
     def block_shape(self) -> tuple[int, ...]:
         return torch.tensor(self.original_shape) / torch.tensor(self.blocks_shape)
 
-    def __getitem__(self, item: tuple[int, ...] | int) -> CompressedBlock:
+    def __getitem__(self, item: tuple[int, ...] or int) -> CompressedBlock:
         """
         :returns: compressed block at the indices
         """
         return CompressedBlock(self.first_elements[item], self.biggest_coefficients[item], self.indicess[item])
 
-    def __setitem__(self, key: tuple[int, ...] | int, value: CompressedBlock):
+    def __setitem__(self, key: tuple[int, ...] or int, value: CompressedBlock):
         self.first_elements[key] = value.first_element
         self.biggest_coefficients[key] = value.biggest_coefficient
         self.indicess[key] = value.indices
