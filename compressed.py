@@ -80,7 +80,6 @@ class CompressedTensor:
         return self + -other
 
     def __mul__(self, other):
-        # return self.blockwise_binary(other, CompressedBlock.__mul__)
         if isinstance(other, (float, int)) or (isinstance(other, torch.Tensor) and other.numel() == 1):
             product = CompressedTensor(
                 self.original_shape,

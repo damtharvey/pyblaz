@@ -42,6 +42,8 @@ class Compressor:
         self.transformer_tensor = None
         self.inverse_transformer_tensor = None
 
+        self.normalize_time = 0
+
         if self.n_bins <= 1 << 8:
             self.index_dtype = torch.int8
         elif self.n_bins <= 1 << 16:
@@ -64,16 +66,28 @@ class Compressor:
 
         blocked = self.block(tensor)
         blocks_shape = blocked.shape[: self.n_dimensions]
-        block_indices = tuple(itertools.product(*(range(size) for size in blocks_shape)))
-
         first_elements = blocked[(...,) + (0,) * self.n_dimensions]
 
-        normalized_blocks = torch.empty(blocked.shape, dtype=self.dtype, device=self.device)
+        start_time = time.time()
+        differences = torch.empty(blocked.shape, dtype=self.dtype, device=self.device)
+        for n_slice_indices in range(1, self.n_dimensions + 1):
+            for slice_directions in self.slice_directions_combinations(n_slice_indices):
+                assignee_index = ["1:" if index in slice_directions else "0" for index in range(self.n_dimensions)]
+                assignee_index_str = "...," + ",".join(assignee_index)
 
-        for block_index in tqdm.tqdm(block_indices, desc="normalizing", total=math.prod(blocks_shape)):
-            normalized_blocks[block_index] = self.normalize(blocked[block_index])
+                for direction in slice_directions:
+                    shifted_index = assignee_index.copy()
+                    shifted_index[direction] = ":-1"
+                    shifted_index_str = "...," + ",".join(shifted_index)
+                    exec(
+                        f"differences[{assignee_index_str}] += "
+                        f"blocked[{assignee_index_str}] - blocked[{shifted_index_str}]"
+                    )
 
-        coefficientss = self.blockwise_transform(normalized_blocks)
+                exec(f"differences[{assignee_index_str}] /= {n_slice_indices}")
+        self.normalize_time += time.time() - start_time
+
+        coefficientss = self.blockwise_transform(differences)
         biggest_coefficients = coefficientss.norm(torch.inf, tuple(range(self.n_dimensions, 2 * self.n_dimensions)))
         coefficientss *= (
             compressed.INDICES_RADIUS[self.index_dtype] / biggest_coefficients[(...,) + (None,) * self.n_dimensions]
@@ -221,28 +235,21 @@ class Compressor:
         :return: Tuple of (the first element of the block, the mean slope, the normalized block)
         """
         differences = torch.zeros_like(block, dtype=self.dtype, device=self.device)
+        for n_slice_indices in range(1, self.n_dimensions + 1):
+            for slice_directions in self.slice_directions_combinations(n_slice_indices):
+                assignee_index = ["1:" if index in slice_directions else "0" for index in range(self.n_dimensions)]
+                assignee_index_str = ",".join(assignee_index)
 
-        if self.n_dimensions == 2:  # Faster for 2D.
-            differences[1:, 0] = block[1:, 0] - block[:-1, 0]
-            differences[0, 1:] = block[0, 1:] - block[0, :-1]
-            differences[1:, 1:] = block[1:, 1:] - (block[:-1, 1:] + block[1:, :-1]) / 2
+                for direction in slice_directions:
+                    shifted_index = assignee_index.copy()
+                    shifted_index[direction] = ":-1"
+                    shifted_index_str = ",".join(shifted_index)
+                    exec(
+                        f"differences[{assignee_index_str}] += "
+                        f"block[{assignee_index_str}] - block[{shifted_index_str}]"
+                    )
 
-        else:
-            for n_slice_indices in range(1, self.n_dimensions + 1):
-                for slice_directions in self.slice_directions_combinations(n_slice_indices):
-                    assignee_index = ["1:" if index in slice_directions else "0" for index in range(self.n_dimensions)]
-                    assignee_index_str = ",".join(assignee_index)
-
-                    for direction in slice_directions:
-                        shifted_index = assignee_index.copy()
-                        shifted_index[direction] = ":-1"
-                        shifted_index_str = ",".join(shifted_index)
-                        exec(
-                            f"differences[{assignee_index_str}] += "
-                            f"block[{assignee_index_str}] - block[{shifted_index_str}]"
-                        )
-
-                    exec(f"differences[{assignee_index_str}] /= {n_slice_indices}")
+                exec(f"differences[{assignee_index_str}] /= {n_slice_indices}")
 
         return differences
 
