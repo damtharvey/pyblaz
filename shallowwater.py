@@ -2,6 +2,7 @@ from compression import Compressor
 import matplotlib.pyplot as plt
 import numpy
 import torch
+
 diff = []
 timesteps = []
 
@@ -11,18 +12,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 compressor = Compressor(block_shape=(4, 4), dtype=dtype, device=device)
 
 for timestep in range(500):
-    txt_file0 = open("./ShallowWatersEquations/output/"+str(timestep)+".txt", "r")
+    txt_file0 = open("./ShallowWatersEquations/output/" + str(timestep) + ".txt", "r")
     file_content0 = txt_file0.read()
-
 
     content_list0 = file_content0.split("\n")
 
     x = 80
-    list_of_lists0 = [content_list0[i:i+x] for i in range(0, len(content_list0), x)]
+    list_of_lists0 = [content_list0[i : i + x] for i in range(0, len(content_list0), x)]
     newlist0 = []
     for word in list_of_lists0[0]:
         word = word.split(",")
-        newlist0.append(word)  
+        newlist0.append(word)
 
     newlist0 = newlist0[:-1]
     final_list0 = []
@@ -33,20 +33,17 @@ for timestep in range(500):
             temp1.append(float(j))
         final_list0.append(temp1)
 
-
-
-    txt_file1 = open("./ShallowWatersEquations/fastmath_output/"+str(timestep)+".txt", "r")
+    txt_file1 = open("./ShallowWatersEquations/fastmath_output/" + str(timestep) + ".txt", "r")
     file_content1 = txt_file1.read()
-
 
     content_list1 = file_content1.split("\n")
 
     x = 80
-    list_of_lists1 = [content_list1[i:i+x] for i in range(0, len(content_list1), x)]
+    list_of_lists1 = [content_list1[i : i + x] for i in range(0, len(content_list1), x)]
     newlist1 = []
     for word in list_of_lists1[0]:
         word = word.split(",")
-        newlist1.append(word)  
+        newlist1.append(word)
 
     newlist1 = newlist1[:-1]
     final_list1 = []
@@ -65,7 +62,7 @@ for timestep in range(500):
 
     decompressed_subtraction = compressor.decompress(compressed_a - compressed_b)
     timesteps.append(timestep)
-    diff.append(decompressed_subtraction.norm(torch.inf))
+    diff.append(decompressed_subtraction.norm(torch.inf).cpu().item())
 
 plt.plot(numpy.asarray(timesteps), numpy.asarray(diff))
 plt.savefig("mygraph.png")

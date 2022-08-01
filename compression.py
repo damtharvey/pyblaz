@@ -1,7 +1,6 @@
 import functools
 import itertools
 import math
-import time
 
 import torch
 import torch.nn.functional
@@ -28,6 +27,7 @@ class Compressor:
         n_bins: int = 256,
         transform: callable = transforms.cosine,
         dtype: torch.dtype = torch.float32,
+        index_dtype: torch.dtype = torch.int8,
         device: torch.device = torch.device("cuda"),
     ):
         self.block_shape = block_shape
@@ -36,24 +36,12 @@ class Compressor:
         self.transform = transform
         self.n_dimensions = len(block_shape)
         self.dtype = dtype
+        self.index_dtype = index_dtype
         self.device = device
 
         self.n_coefficients = None
         self.transformer_tensor = None
         self.inverse_transformer_tensor = None
-
-        self.unnormalize_time = 0
-
-        if self.n_bins <= 1 << 8:
-            self.index_dtype = torch.int8
-        elif self.n_bins <= 1 << 16:
-            self.index_dtype = torch.int16
-        elif self.n_bins <= 1 << 32:
-            self.index_dtype = torch.int32
-        elif self.n_bins <= 1 << 64:
-            self.index_dtype = torch.int64
-        else:
-            raise ValueError("Too many bins.")
 
     def compress(self, tensor: torch.Tensor) -> CompressedTensor:
         """
@@ -126,112 +114,35 @@ class Compressor:
             f"must match tensor dimensionality ({compressed_tensor.n_dimensions})."
         )
 
-        # decompressed = torch.empty(  # Don't kill
-        #     tuple(
-        #         ((size + block_size - 1) >> log_2_block_size) * block_size
-        #         for size, block_size, log_2_block_size in zip(
-        #             compressed_tensor.original_shape, self.block_shape, self.log_2_block_shape
-        #         )
-        #     ),
-        #     dtype=self.dtype,
-        #     device=self.device,
-        # )
-
+        block_indices = tuple(itertools.product(*(range(size) for size in compressed_tensor.blocks_shape)))
         differences = self.blockwise_transform(self.bin_inverse(compressed_tensor), inverse=True)
+        unnormalized = self.normalize_inverse(block_indices, compressed_tensor, differences)
+        unblocked = self.block_inverse(unnormalized)
 
-        start_time = time.time()
-        # for block_index in tqdm.tqdm(
-        #     itertools.product(*(range(size) for size in compressed_tensor.blocks_shape)),
-        #     desc="unnormalizing",
-        #     total=math.prod(compressed_tensor.blocks_shape),
-        # ):
-        #
-        #     index_range_str = ",".join(
-        #         f"{block_index_element * block_size} : {block_index_element * block_size + block_size}"
-        #         for block_index_element, block_size in zip(block_index, self.block_shape)
-        #     )
-        #     unnormalized = differences[block_index].detach()
-        #     # The first element of the normalized block should be close to 0.
-        #     # We can replace it with the first element in the unnormalized tensor.
-        #     unnormalized[(0,) * self.n_dimensions] = compressed_tensor.first_elements[block_index]
-        #
-        #     # if False:
-        #     if self.n_dimensions == 2:  # Faster for 2D
-        #         unnormalized[:, 0] = torch.cumsum(differences[block_index][:, 0], 0)
-        #         unnormalized[0, :] = torch.cumsum(differences[block_index][0, :], 0)
-        #         for i in range(1, self.block_shape[0]):
-        #             for j in range(1, self.block_shape[1]):
-        #                 unnormalized[i, j] = differences[block_index][i, j] + (unnormalized[i - 1, j] + unnormalized[i, j - 1]) / 2
-        #
-        #     else:
-        #         for n_slice_indices in range(1, self.n_dimensions + 1):
-        #             for slice_directions in self.slice_directions_combinations(n_slice_indices):
-        #                 for index_group in self.index_groups(slice_directions, unnormalized.shape):
-        #                     assignee_indices = np.array(index_group)
-        #                     assignee_indices_str = ",".join(
-        #                         f"assignee_indices[:, {dimension}]" for dimension in range(self.n_dimensions)
-        #                     )
-        #
-        #                     for direction in slice_directions:
-        #                         adjacent_indices = assignee_indices.copy().T
-        #                         adjacent_indices[direction] -= 1
-        #                         unnormalized[eval(assignee_indices_str)] += (
-        #                                 torch.take(
-        #                                     unnormalized,
-        #                                     torch.tensor(
-        #                                         np.ravel_multi_index(adjacent_indices, self.block_shape),
-        #                                         device=self.device
-        #                                     ),
-        #                                 )
-        #                                 / n_slice_indices
-        #                         )
-        #     exec(f"decompressed[{index_range_str}] = unnormalized")
+        return eval(f"unblocked[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
 
+    def normalize_inverse(self, block_indices, compressed_tensor, differences):
         decompressed = differences.detach().clone()
-        decompressed[(...,) + (0,) * self.n_dimensions] = compressed_tensor.first_elements
-
-        # if False:
-        if self.n_dimensions == 2:  # Faster for 2D
-            decompressed[..., 1:, 0] = (
-                torch.cumsum(differences[..., 1:, 0], self.n_dimensions) + compressed_tensor.first_elements[..., None]
-            )
-            decompressed[..., 0, 1:] = (
-                torch.cumsum(differences[..., 0, 1:], self.n_dimensions) + compressed_tensor.first_elements[..., None]
-            )
-            for i in range(1, self.block_shape[0]):
-                for j in range(1, self.block_shape[1]):
-                    decompressed[..., i, j] = (
-                        differences[..., i, j] + (decompressed[..., i - 1, j] + decompressed[..., i, j - 1]) / 2
+        decompressed[(...,) + (0,) * self.n_dimensions] = compressed_tensor.first_elements  # TODO try ::
+        for n_slice_indices in range(1, self.n_dimensions + 1):
+            for slice_directions in self.slice_directions_combinations(n_slice_indices):
+                index_groups = self.index_groups(slice_directions, self.block_shape)
+                for index_group in index_groups:
+                    assignee_indices = torch.tensor(index_group, dtype=torch.int64)
+                    assignee_indices = torch.cat(
+                        (torch.tensor(block_indices), assignee_indices.expand(len(block_indices), -1)), 1
                     )
 
-        else:
-            for n_slice_indices in range(1, self.n_dimensions + 1):
-                for slice_directions in self.slice_directions_combinations(n_slice_indices):
-                    for index_group in self.index_groups(slice_directions, decompressed.shape):
-                        assignee_indices = np.array(index_group)
-                        assignee_indices_str = ",".join(
-                            f"assignee_indices[:, {dimension}]" for dimension in range(self.n_dimensions)
+                    for direction in slice_directions:
+                        adjacent_indices = assignee_indices.clone()
+                        adjacent_indices[:, self.n_dimensions + direction] -= 1
+                        flattened_index = np.ravel_multi_index(tuple(adjacent_indices.T.numpy()), decompressed.shape)
+                        flattened_index_tensor = torch.tensor(flattened_index, device=self.device)
+                        decompressed[(...,) + index_group] += (
+                            torch.take(decompressed, flattened_index_tensor).view(compressed_tensor.blocks_shape)
+                            / n_slice_indices
                         )
-
-                        for direction in slice_directions:
-                            adjacent_indices = assignee_indices.copy().T
-                            adjacent_indices[direction] -= 1
-                            decompressed[eval(assignee_indices_str)] += (
-                                torch.take(
-                                    decompressed,
-                                    torch.tensor(
-                                        np.ravel_multi_index(adjacent_indices, self.block_shape), device=self.device
-                                    ),
-                                )
-                                / n_slice_indices
-                            )
-            exec(f"decompressed[{index_range_str}] = unnormalized")
-
-        self.unnormalize_time = time.time() - start_time
-
-        decompressed = self.block_inverse(decompressed)
-
-        return eval(f"decompressed[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
+        return decompressed
 
     def bin_inverse(self, compressed_tensor):
         return (
@@ -365,35 +276,17 @@ class Compressor:
         # We can replace it with the first element in the unnormalized tensor.
         unnormalized[(0,) * self.n_dimensions] = first_element
 
-        if False:
-            # if self.n_dimensions == 2:  # Faster for 2D
-            unnormalized[:, 0] = torch.cumsum(block[:, 0], 0)
-            unnormalized[0, :] = torch.cumsum(block[0, :], 0)
-            for i in range(1, self.block_shape[0]):
-                for j in range(1, self.block_shape[1]):
-                    unnormalized[i, j] = block[i, j] + (unnormalized[i - 1, j] + unnormalized[i, j - 1]) / 2
-
-        else:
-            for n_slice_indices in range(1, self.n_dimensions + 1):
-                for slice_directions in self.slice_directions_combinations(n_slice_indices):
-                    for index_group in self.index_groups(slice_directions, unnormalized.shape):
-                        assignee_indices = np.array(index_group)
-                        assignee_indices_str = ",".join(
-                            f"assignee_indices[:, {dimension}]" for dimension in range(self.n_dimensions)
-                        )
-
-                        for direction in slice_directions:
-                            adjacent_indices = assignee_indices.copy().T
-                            adjacent_indices[direction] -= 1
-                            unnormalized[eval(assignee_indices_str)] += (
-                                torch.take(
-                                    unnormalized,
-                                    torch.tensor(
-                                        np.ravel_multi_index(adjacent_indices, self.block_shape), device=self.device
-                                    ),
-                                )
-                                / n_slice_indices
-                            )
+        for n_slice_indices in range(1, self.n_dimensions + 1):
+            for slice_directions in self.slice_directions_combinations(n_slice_indices):
+                index_groups = self.index_groups(slice_directions, unnormalized.shape)
+                for index_group in index_groups:
+                    assignee_indices = np.array(index_group)
+                    for direction in slice_directions:
+                        adjacent_indices = assignee_indices.copy().T
+                        adjacent_indices[direction] -= 1
+                        flattened_index = np.ravel_multi_index(adjacent_indices, self.block_shape)
+                        flattened_index_tensor = torch.tensor(flattened_index, device=self.device)
+                        unnormalized[index_group] += torch.take(unnormalized, flattened_index_tensor) / n_slice_indices
 
         return unnormalized
 
@@ -529,7 +422,7 @@ class Compressor:
     @functools.cache
     def index_groups(self, slice_directions, shape):
         return tuple(
-            tuple(group)
+            tuple(group)[0]
             for _, group in itertools.groupby(
                 itertools.product(
                     *(range(1, size) if direction in slice_directions else (0,) for direction, size in enumerate(shape))
