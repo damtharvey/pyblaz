@@ -8,6 +8,7 @@ import torch.nn.functional
 import tqdm
 import numpy as np
 
+import compressed
 import transforms
 from compressed import CompressedBlock, CompressedTensor
 
@@ -41,10 +42,6 @@ class Compressor:
         self.transformer_tensor = None
         self.inverse_transformer_tensor = None
 
-        self.normalize_time = 0
-        self.block_transform_time = 0
-        self.bin_time = 0
-
         if self.n_bins <= 1 << 8:
             self.index_dtype = torch.int8
         elif self.n_bins <= 1 << 16:
@@ -60,114 +57,93 @@ class Compressor:
         """
         This isn't blockwise complete compression. Some things are better done over the whole tensor.
         """
-        assert self.n_dimensions == len(
-            tensor.shape
-        ), f"Compressor dimensionality ({self.n_dimensions}) must match tensor dimensionality ({len(tensor.shape)})."
+        assert self.n_dimensions == len(tensor.shape), (
+            f"Compressor dimensionality ({self.n_dimensions}) "
+            f"must match tensor dimensionality ({len(tensor.shape)})."
+        )
 
         blocked = self.block(tensor)
         blocks_shape = blocked.shape[: self.n_dimensions]
         block_indices = tuple(itertools.product(*(range(size) for size in blocks_shape)))
 
-        first_elements = eval(f"blocked[{':,' * self.n_dimensions + '0,' * self.n_dimensions}]")
+        first_elements = blocked[(...,) + (0,) * self.n_dimensions]
 
         normalized_blocks = torch.empty(blocked.shape, dtype=self.dtype, device=self.device)
 
-        start_time = time.time()
-        for block_index in tqdm.tqdm(
-            block_indices,
-            desc="normalizing",
-            total=math.prod(blocks_shape),
-        ):
-
+        for block_index in tqdm.tqdm(block_indices, desc="normalizing", total=math.prod(blocks_shape)):
             normalized_blocks[block_index] = self.normalize(blocked[block_index])
 
-        self.normalize_time += time.time() - start_time
-
-        start_time = time.time()
         coefficientss = self.blockwise_transform(normalized_blocks)
-        self.block_transform_time += time.time() - start_time
-
         biggest_coefficients = coefficientss.norm(torch.inf, tuple(range(self.n_dimensions, 2 * self.n_dimensions)))
+        coefficientss *= (
+            compressed.INDICES_RADIUS[self.index_dtype] / biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+        )
 
-        indicess = torch.empty(blocked.shape, dtype=self.index_dtype, device=self.device)
+        return CompressedTensor(
+            tensor.shape, first_elements, biggest_coefficients, coefficientss.round().type(self.index_dtype)
+        )
 
-        start_time = time.time()
-        for block_index in tqdm.tqdm(
-            block_indices,
-            desc="binning",
-            total=math.prod(blocks_shape),
-        ):
-            indicess[block_index] = self.bin(coefficientss[block_index], biggest_coefficients[block_index])
-        indicess = self.center(indicess)
-        self.bin_time += time.time() - start_time
-
-        return CompressedTensor(tensor.shape, first_elements, biggest_coefficients, indicess.type(self.index_dtype))
-
-    # def get_first_elements(self, blocks_shape, padded):
-    #     tile = torch.zeros(self.block_shape, dtype=torch.bool)
-    #     tile[(0,) * self.n_dimensions] = True
-    #     first_elements = padded[torch.tile(tile, blocks_shape)].reshape(blocks_shape)
-    #     return first_elements
-
-    def decompress(self, compressed: CompressedTensor):
+    def decompress(self, compressed_tensor: CompressedTensor):
         """
         This isn't blockwise complete decompression. Some things are better done over the whole tensor.
         """
-        assert (
-            self.n_dimensions == compressed.n_dimensions
-        ), f"Compressor dimensionality ({self.n_dimensions}) must match tensor dimensionality ({compressed.n_dimensions})."
+        assert self.n_dimensions == compressed_tensor.n_dimensions, (
+            f"Compressor dimensionality ({self.n_dimensions}) "
+            f"must match tensor dimensionality ({compressed_tensor.n_dimensions})."
+        )
 
         decompressed = torch.empty(  # Don't kill
             tuple(
                 ((size + block_size - 1) >> log_2_block_size) * block_size
                 for size, block_size, log_2_block_size in zip(
-                    compressed.original_shape, self.block_shape, self.log_2_block_shape
+                    compressed_tensor.original_shape, self.block_shape, self.log_2_block_shape
                 )
             ),
             dtype=self.dtype,
             device=self.device,
         )
-        uncentered = self.center_inverse(compressed.indicess)
 
-        coefficientss_or_differences = torch.empty(compressed.blocks_shape + self.block_shape, dtype=self.dtype, device=self.device)
-
-        block_indices = tuple(itertools.product(*(range(size) for size in compressed.blocks_shape)))
-
-        for block_index in tqdm.tqdm(
-            block_indices,
-            desc="unbinning",
-            total=math.prod(compressed.blocks_shape),
-        ):
-            coefficientss_or_differences[block_index] = self.bin_inverse(uncentered[block_index], compressed.biggest_coefficients[block_index])
-            # differences = self.block_transform(coefficients, inverse=True)
-
-        coefficientss_or_differences = self.blockwise_transform(coefficientss_or_differences, inverse=True)
+        differences = self.blockwise_transform(  # Don't kill
+            (
+                compressed_tensor.indicess.type(self.dtype)
+                * compressed_tensor.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+                / compressed.INDICES_RADIUS[self.index_dtype]
+            ),
+            inverse=True,
+        )
 
         for block_index in tqdm.tqdm(
-            block_indices,
+            itertools.product(*(range(size) for size in compressed_tensor.blocks_shape)),
             desc="unnormalizing",
-            total=math.prod(compressed.blocks_shape),
+            total=math.prod(compressed_tensor.blocks_shape),
         ):
-            block = self.normalize_inverse(compressed.first_elements[block_index], coefficientss_or_differences[block_index])  # Don't kill
+
             index_range_str = ",".join(
                 f"{block_index_element * block_size} : {block_index_element * block_size + block_size}"
                 for block_index_element, block_size in zip(block_index, self.block_shape)
             )
-            exec(f"decompressed[{index_range_str}] = block")
+            exec(
+                f"decompressed[{index_range_str}] = "
+                "self.normalize_inverse(compressed_tensor.first_elements[block_index], differences[block_index])"
+            )
 
-        return eval(f"decompressed[{','.join(f':{size}' for size in compressed.original_shape)}]").to(self.device)
+        return eval(f"decompressed[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
 
-    # def compress_block(self, block: torch.Tensor) -> CompressedBlock:
-    #     normalized_block = self.normalize(block)
-    #     coefficients = self.block_transform(normalized_block)
-    #     indices, biggest_coefficient = self.bin(coefficients)
-    #     centered = self.center(indices)
-    #     return CompressedBlock(block[(0,) * self.n_dimensions], biggest_coefficient, centered)
+    def compress_block(self, block: torch.Tensor) -> CompressedBlock:
+        normalized_block = self.normalize(block)
+        coefficients = self.blockwise_transform(normalized_block[(None,) * self.n_dimensions + (...,)]).view(
+            self.block_shape
+        )
+        biggest_coefficient = coefficients.norm(torch.inf)
+        indices = self.bin(coefficients, biggest_coefficient)
+        centered = self.center(indices)
+        return CompressedBlock(block[(0,) * self.n_dimensions], biggest_coefficient, centered)
 
     def decompress_block(self, block: CompressedBlock) -> torch.Tensor:
-        uncentered = self.center_inverse(block.indices)
-        coefficients = self.bin_inverse(uncentered, block.biggest_coefficient)
-        differences = self.blockwise_transform(coefficients, inverse=True)
+        coefficients = self.bin_inverse(block.indices, block.biggest_coefficient)
+        differences = self.blockwise_transform(coefficients[(None,) * self.n_dimensions + (...,)], inverse=True).view(
+            self.block_shape
+        )
         return self.normalize_inverse(block.first_element, differences)
 
     def dot_product_block(self, a: CompressedBlock, b: CompressedBlock, row: int, column: int) -> float:
@@ -211,34 +187,29 @@ class Compressor:
             blocked[block_index] = eval(f"padded[{index_range_str}]")
         return blocked
 
-    def block_inverse(self, blocked: torch.Tensor) -> torch.Tensor:
-        """
-        Reshape the blocked form tensor into unblocked form.
-
-        :param blocked: tensor of shape blocks' shape followed by block shape.
-        :return: unblocked tensor
-        """
-        unblocked_shape = (
-            *(n_blocks * size for n_blocks, size in zip(blocked.shape[: self.n_dimensions], self.block_shape)),
-        )
-        unblocked = torch.zeros(unblocked_shape, dtype=self.dtype, device=self.device)
-        for blocked_indices in tqdm.tqdm(
-            itertools.product(*(range(size) for size in blocked.shape)), desc="unblocking", total=torch.numel(blocked)
-        ):
-            unblocked[
-                (
-                    *(
-                        block_number * block_size + offset
-                        for block_number, block_size, offset in zip(
-                            blocked_indices[: self.n_dimensions],
-                            self.block_shape,
-                            blocked_indices[self.n_dimensions :],
-                        )
-                    ),
-                )
-            ] = blocked[blocked_indices]
-
-        return unblocked
+    # def block_inverse(self, blocked: torch.Tensor) -> torch.Tensor:
+    #     """
+    #     Reshape the blocked form tensor into unblocked form.
+    #
+    #     :param blocked: tensor of shape blocks' shape followed by block shape.
+    #     :return: unblocked tensor
+    #     """
+    #     unblocked_shape = (
+    #         *(n_blocks * size for n_blocks, size in zip(blocked.shape[: self.n_dimensions], self.block_shape)),
+    #     )
+    #     unblocked = torch.zeros(unblocked_shape, dtype=self.dtype, device=self.device)
+    #     for block_index in tqdm.tqdm(
+    #             itertools.product(*(range(size) for size in blocked.shape[: self.n_dimensions])),
+    #             desc="unblocking",
+    #             total=math.prod(blocked.shape[: self.n_dimensions]),
+    #     ):
+    #         index_range_str = ",".join(
+    #             f"{block_index_element * block_size} : {block_index_element * block_size + block_size}"
+    #             for block_index_element, block_size in zip(block_index, self.block_shape)
+    #         )
+    #         exec(f"unblocked[index_range_str] = blocked[block_index]")
+    #
+    #     return unblocked
 
     def normalize(self, block: torch.Tensor) -> torch.Tensor:
         """
@@ -321,28 +292,27 @@ class Compressor:
 
         return unnormalized
 
-    def bin(self, coefficients: torch.Tensor, biggest_coefficient: float) -> tuple[torch.Tensor, float]:
+    def bin(self, coefficients: torch.Tensor, biggest_coefficient: float) -> torch.Tensor:
         """
         Section II.c
 
         :param coefficients:
         :param biggest_coefficient:
-        :return: Indices of the coefficient bins
+        :return: Centered indices of the coefficient bins
         """
-        return (coefficients.unsqueeze(-1) - self.bins(biggest_coefficient)).abs().min(-1).indices.to(self.index_dtype)
+        return coefficients * compressed.INDICES_RADIUS[self.index_dtype] / biggest_coefficient
 
     def bin_inverse(self, indices: torch.Tensor, biggest_coefficient: float) -> torch.Tensor:
         """
         Section II.(-c)
 
-        :param indices: Indices of the bins
+        :param indices: Centered indices of the bins
         :param biggest_coefficient: biggest bin value.
         :return: Values corresponding to each index
         """
-        biggest_coefficient = float(biggest_coefficient)  # in case it's a Tensor.
         assert biggest_coefficient >= 0, f"The biggest coefficient {biggest_coefficient} should be non-negative."
 
-        return self.bins(biggest_coefficient)[indices.type(torch.int64)]
+        return indices.type(self.dtype) * biggest_coefficient / compressed.INDICES_RADIUS[self.index_dtype]
 
     def center(self, slope_indices: torch.Tensor) -> torch.Tensor:
         """

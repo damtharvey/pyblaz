@@ -57,19 +57,17 @@ class CompressedTensor:
         return CompressedTensor(self.original_shape, -self.first_elements, self.biggest_coefficients, -self.indicess)
 
     def __add__(self, other):
-        indices = self.indicess * eval(
-            f"self.biggest_coefficients[{':,' * self.n_dimensions + 'None,' * self.n_dimensions}]"
-        ) + other.indicess * eval(
-            f"other.biggest_coefficients[{':,' * other.n_dimensions + 'None,' * other.n_dimensions}]"
+        indices = (
+            self.indicess * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+            + other.indicess * other.biggest_coefficients[(...,) + (None,) * other.n_dimensions]
         )
+
         proportion_of_radius = (
             indices.norm(torch.inf, tuple(range(self.n_dimensions, 2 * self.n_dimensions)))
             / INDICES_RADIUS[self.indicess.dtype]
         )
         indices = torch.nan_to_num(
-            (indices / eval(f"proportion_of_radius[{':,' * other.n_dimensions + 'None,' * other.n_dimensions}]"))
-            .round()
-            .type(self.indicess.dtype)
+            (indices / proportion_of_radius[(...,) + (None,) * other.n_dimensions]).round().type(self.indicess.dtype)
         )
         return CompressedTensor(
             self.original_shape,
