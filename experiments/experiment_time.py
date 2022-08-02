@@ -1,6 +1,8 @@
 import argparse
 import pathlib
 
+import tqdm
+
 import compression
 import torch
 from datetime import datetime
@@ -50,10 +52,12 @@ def main():
         device=device,
     )
 
-    to_write = ["size,compress,add,compressed_add,subtract,compressed_subtract,multiply,compressed_multiply,dot,decompress"]
+    to_write = [
+        "size,compress,add,compressed_add,subtract,compressed_subtract,"
+        "multiply,compressed_multiply,dot,compressed_dot,decompress"
+    ]
 
-    size = args.block_size
-    while size <= args.max_size:
+    for size in tqdm.tqdm(tuple(1 << p for p in range(args.block_size.bit_length() - 1, args.max_size.bit_length()))):
         results = []
         for run_number in range(args.runs + 1):
             x = torch.rand(size, size, dtype=dtype, device=device)
@@ -95,10 +99,17 @@ def main():
             _ = compressed_x * 3.14159
             compressed_multiply = (datetime.now() - start_time).microseconds
 
+            row, column = torch.randint(0, size, (2,))
+
             # dot product
             start_time = datetime.now()
-            _ = compressor.dot_product(compressed_x, compressed_y, *torch.randint(0, size, (2,)))
+            _ = x[row] @ y[:, column]
             dot = (datetime.now() - start_time).microseconds
+
+            # compressed dot product
+            start_time = datetime.now()
+            _ = compressor.dot_product(compressed_x, compressed_y, row, column)
+            compressed_dot = (datetime.now() - start_time).microseconds
 
             # decompression
             start_time = datetime.now()
@@ -117,7 +128,8 @@ def main():
                         multiply,
                         compressed_multiply,
                         dot,
-                        decompress
+                        compressed_dot,
+                        decompress,
                     ]
                 )
 
@@ -127,7 +139,8 @@ def main():
         size <<= 1
 
     with open(
-        results_save_path / f"pyblaz_time_{'x'.join(str(size) for size in compressor.block_shape)}blocks_{str(dtype)[6:]}.csv",
+        results_save_path
+        / f"pyblaz_time_{'x'.join(str(size) for size in compressor.block_shape)}blocks_{str(dtype)[6:]}.csv",
         "w",
     ) as file:
         file.write("\n".join(to_write))
