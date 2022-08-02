@@ -1,6 +1,5 @@
 import argparse
-
-from sqlalchemy import false
+import pathlib
 
 import compression
 import torch
@@ -9,26 +8,39 @@ from datetime import datetime
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--dimensions", type=int, default=2)
+    parser.add_argument("--block-size", type=int, default=8, help="size of a hypercubic block")
+    parser.add_argument("--max-size", type=int, default=256)
     parser.add_argument(
-        "--block-size", type=int, default=8, help="size of a hypercubic block"
+        "--dtype",
+        type=str,
+        default="float16",
+        choices=(
+            dtypes := {
+                "bfloat16": torch.bfloat16,
+                "float16": torch.float16,
+                "float32": torch.float32,
+                "float64": torch.float64,
+            }
+        ),
     )
     parser.add_argument(
         "--index-dtype",
         type=str,
-        default="int8",
+        default="int16",
         choices=(
-            index_dtypes := {
-                "int8": torch.int8,
-                "int16": torch.int16,
-                "int32": torch.int32,
-                "int64": torch.int64,
-            }
+            index_dtypes := {"int8": torch.int8, "int16": torch.int16, "int32": torch.int32, "int64": torch.int64}
         ),
     )
+    parser.add_argument("--results-path", type=str, default="results")
+    parser.add_argument("--experiment-name", type=str, default="time")
     args = parser.parse_args()
 
-    dtype = torch.float64
+    results_save_path = pathlib.Path(args.results_path) / args.experiment_name
+    results_save_path.mkdir(parents=True, exist_ok=True)
+
+    dtype = dtypes[args.dtype]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     compressor = compression.Compressor(
@@ -38,98 +50,87 @@ def main():
         device=device,
     )
 
-    print(
-        "size,compress,add,compressed_add,subtract,compressed_subtract,multiply,compressed_multiply,decompress"
-    )
+    to_write = ["size,compress,add,compressed_add,subtract,compressed_subtract,multiply,compressed_multiply,dot,decompress"]
 
-    # warmup
-    warmup(compressor, device, dtype)
+    size = args.block_size
+    while size <= args.max_size:
+        results = []
+        for run_number in range(args.runs + 1):
+            x = torch.rand(size, size, dtype=dtype, device=device)
+            y = torch.rand(size, size, dtype=dtype, device=device)
 
-    for size in (1 << p for p in range(3, 15)):
-        x = torch.rand(size, size, dtype=dtype, device=device)
-        y = torch.rand(size, size, dtype=dtype, device=device)
+            # compress
+            start_time = datetime.now()
+            compressed_x = compressor.compress(x)
+            compressed_y = compressor.compress(y)
+            compress = ((datetime.now() - start_time) / 2).microseconds
 
-        # compresscompressed_x = compressor.compress(x)
-        start_time = datetime.now()
-        compressed_x = compressor.compress(x)
-        compressed_y = compressor.compress(y)
-        compress_time = ((datetime.now() - start_time) / 2).microseconds
+            # add
+            start_time = datetime.now()
+            _ = x + y
+            add = (datetime.now() - start_time).microseconds
 
-        # add
-        start_time = datetime.now()
-        result = x + y
-        add_time = (datetime.now() - start_time).microseconds
+            # compressed add
+            start_time = datetime.now()
+            _ = compressed_x + compressed_y
+            compressed_add = (datetime.now() - start_time).microseconds
 
-        # compressed add
-        start_time = datetime.now()
-        result = compressed_x + compressed_y
-        compressed_add_time = (datetime.now() - start_time).microseconds
+            # subtract
+            start_time = datetime.now()
+            _ = x - y
+            subtract = (datetime.now() - start_time).microseconds
 
-        # subtract
-        start_time = datetime.now()
-        result = x - y
-        subtract_time = (datetime.now() - start_time).microseconds
+            # compressed subtract
+            start_time = datetime.now()
+            _ = compressed_x - compressed_y
+            compressed_subtract = (datetime.now() - start_time).microseconds
 
-        # compressed subtract
-        start_time = datetime.now()
-        compressed_sum = compressed_x - compressed_y
-        compressed_subtract_time = (datetime.now() - start_time).microseconds
+            # multiply
+            start_time = datetime.now()
+            _ = x * 3.14159
+            multiply = (datetime.now() - start_time).microseconds
 
-        # multiply
-        start_time = datetime.now()
-        result = x * 3.14159
-        multiply_time = (datetime.now() - start_time).microseconds
+            # compressed multiply
+            start_time = datetime.now()
+            _ = compressed_x * 3.14159
+            compressed_multiply = (datetime.now() - start_time).microseconds
 
-        # compressed multiply
-        start_time = datetime.now()
-        result = compressed_x * torch.pi
-        compressed_multiply_time = (datetime.now() - start_time).microseconds
+            # dot product
+            start_time = datetime.now()
+            _ = compressor.dot_product(compressed_x, compressed_y, *torch.randint(0, size, (2,)))
+            dot = (datetime.now() - start_time).microseconds
 
-        start_time = datetime.now()
-        decompressed = compressor.decompress(compressed_x)
-        decompress_time = (datetime.now() - start_time).microseconds
+            # decompression
+            start_time = datetime.now()
+            _ = compressor.decompress(compressed_x)
+            decompress = (datetime.now() - start_time).microseconds
 
-        print(
-            f"{size},{compress_time},{add_time},{compressed_add_time},{subtract_time},{compressed_subtract_time},"
-            f"{multiply_time},{compressed_multiply_time},{decompress_time}"
-        )
+            if run_number > 0:
+                results.append(
+                    [
+                        size,
+                        compress,
+                        add,
+                        compressed_add,
+                        subtract,
+                        compressed_subtract,
+                        multiply,
+                        compressed_multiply,
+                        dot,
+                        decompress
+                    ]
+                )
 
+        results = torch.tensor(results, dtype=torch.float64).mean(0).round()
+        to_write.append(",".join(str(int(number)) for number in results))
 
-def warmup(compressor, device, dtype):
-    x = torch.rand(8, 8, dtype=dtype, device=device)
-    y = torch.rand(8, 8, dtype=dtype, device=device)
-    # compress
-    start_time = datetime.now()
-    compressed_x = compressor.compress(x)
-    compressed_y = compressor.compress(y)
-    compress_time = ((datetime.now() - start_time) / 2).microseconds
-    # add
-    start_time = datetime.now()
-    result = x + y
-    add_time = (datetime.now() - start_time).microseconds
-    # compressed add
-    start_time = datetime.now()
-    result = compressed_x + compressed_y
-    compressed_add_time = (datetime.now() - start_time).microseconds
-    # subtract
-    start_time = datetime.now()
-    result = x - y
-    subtract_time = (datetime.now() - start_time).microseconds
-    # compressed subtract
-    start_time = datetime.now()
-    compressed_sum = compressed_x - compressed_y
-    compressed_subtract_time = (datetime.now() - start_time).microseconds
-    # multiply
-    start_time = datetime.now()
-    result = x * 3.14159
-    multiply_time = (datetime.now() - start_time).microseconds
-    # compressed multiply
-    start_time = datetime.now()
-    result = compressed_x * torch.pi
-    compressed_multiply_time = (datetime.now() - start_time).microseconds
-    start_time = datetime.now()
-    decompressed = compressor.decompress(compressed_x)
-    decompress_time = (datetime.now() - start_time).microseconds
+        size <<= 1
+
+    with open(
+        results_save_path / f"pyblaz_time_{'x'.join(str(size) for size in compressor.block_shape)}blocks_{str(dtype)[6:]}.csv",
+        "w",
+    ) as file:
+        file.write("\n".join(to_write))
 
 
 if __name__ == "__main__":
