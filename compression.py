@@ -212,7 +212,8 @@ class Compressor:
             n_coefficients = math.prod(self.block_shape)
 
         if n_coefficients == self.n_coefficients and (
-            (self.transformer_tensor and not inverse) or (self.inverse_transformer_tensor and inverse)
+            (self.transformer_tensor is not None and not inverse)
+            or (self.inverse_transformer_tensor is not None and inverse)
         ):
             transformer_tensor = self.transformer_tensor if not inverse else self.inverse_transformer_tensor
         else:
@@ -222,7 +223,7 @@ class Compressor:
             )
             if transform_tensor_path.exists():
                 transformer_tensor = torch.load(transform_tensor_path).to(self.device)
-            else:
+            elif n_coefficients < math.prod(self.block_shape):
                 transformer_tensor = torch.zeros(
                     *self.block_shape * 2,
                     dtype=self.dtype,
@@ -246,16 +247,34 @@ class Compressor:
                                 self.block_shape, element_indices, frequency_indices
                             )
                         )
+            else:
+                transform_matrices = {
+                    block_size: torch.tensor(
+                        [
+                            [self.transform(block_size, element, frequency, inverse) for frequency in range(block_size)]
+                            for element in range(block_size)
+                        ],
+                        dtype=self.dtype,
+                        device=self.device,
+                    )
+                    for block_size in set(self.block_shape)
+                }
+                einsum_arguments = []
+                for direction, block_size in enumerate(self.block_shape):
+                    einsum_arguments.append(transform_matrices[block_size])
+                    einsum_arguments.append((direction, direction + self.n_dimensions))
 
-                if not inverse:
-                    self.transformer_tensor = transformer_tensor
-                else:
-                    self.inverse_transformer_tensor = transformer_tensor
+                transformer_tensor = torch.einsum(*einsum_arguments)
 
-                self.transform_tensor_directory.mkdir(parents=True, exist_ok=True)
-                torch.save(transformer_tensor, transform_tensor_path)
+            if not inverse:
+                self.transformer_tensor = transformer_tensor
+            else:
+                self.inverse_transformer_tensor = transformer_tensor
 
-        transformed = torch.einsum(
+            self.transform_tensor_directory.mkdir(parents=True, exist_ok=True)
+            torch.save(transformer_tensor, transform_tensor_path)
+
+        return torch.einsum(
             blocked_tensor,
             # blocks, intrablock
             tuple(range(2 * self.n_dimensions)),
@@ -265,8 +284,6 @@ class Compressor:
             # blocks, coefficients
             tuple(range(self.n_dimensions)) + tuple(range(2 * self.n_dimensions, 3 * self.n_dimensions)),
         )
-
-        return transformed
 
     def bin(self, coefficientss: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
