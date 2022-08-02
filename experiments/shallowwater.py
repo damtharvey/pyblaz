@@ -1,9 +1,14 @@
+from cProfile import label
 from compression import Compressor
 import matplotlib.pyplot as plt
-import numpy
+import numpy as np
 import torch
 
-diff = []
+coefficient_difference = []
+absolute_error = []
+relative_error = []
+actual_error = []
+actual_relative_error = []
 timesteps = []
 for timestep in range(500):
     txt_file0 = open(
@@ -60,25 +65,43 @@ for timestep in range(500):
     a = torch.FloatTensor(final_list0)
     b = torch.FloatTensor(final_list1)
 
+    blocks_a = compressor.block(a)
+    differences_a = compressor.normalize(blocks_a)
+    coefficient_a = compressor.blockwise_transform(differences_a[:, :, :, :])
+
+    blocks_b = compressor.block(b)
+    differences_b = compressor.normalize(blocks_b)
+    coefficient_b = compressor.blockwise_transform(differences_b[:, :, :, :])
+
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
 
     subtraction = a - b
     decompressed_subtraction = compressor.decompress(compressed_b - compressed_a)
     timesteps.append(timestep)
-    diff.append(
+    coefficient_difference.append((coefficient_a - coefficient_b).max())
+    absolute_error.append(decompressed_subtraction.max())
+    relative_error.append(
         (
-            abs(
-                (
-                    sum(sum(decompressed_subtraction))
-                    / sum(sum(compressor.decompress(compressed_a)))
-                )
+            np.nan_to_num(
+                decompressed_subtraction / compressor.decompress(compressed_a)
             )
-            * 100
-        )
-        .cpu()
-        .item()
+        ).max()
     )
-
-plt.plot(numpy.asarray(timesteps), numpy.asarray(diff))
-plt.savefig("mygraph.png")
+    actual_error.append(subtraction.max())
+    actual_relative_error.append((np.nan_to_num(subtraction / a)).max())
+plt.plot(
+    np.asarray(timesteps),
+    np.asarray(coefficient_difference),
+    label="coefficient difference",
+)
+plt.plot(np.asarray(timesteps), np.asarray(absolute_error), label="absolute error")
+# plt.plot(np.asarray(timesteps), np.asarray(relative_error), label="relative error")
+plt.plot(np.asarray(timesteps), np.asarray(actual_error), label="actual error")
+plt.plot(
+    np.asarray(timesteps),
+    np.asarray(actual_relative_error),
+    label="actual relative error",
+)
+plt.legend()
+plt.savefig("error_graph.png")

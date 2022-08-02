@@ -5,6 +5,7 @@ from sqlalchemy import false
 import compression
 import torch
 from datetime import datetime
+import numpy as np
 
 
 def main():
@@ -39,10 +40,16 @@ def main():
     )
 
     x = torch.rand(80, 80, dtype=dtype, device=device)
+    blocks_x = compressor.block(x)
+    differences_x = compressor.normalize(blocks_x)
+    coefficient_x = compressor.blockwise_transform(differences_x[:, :, :, :])
+
     y = torch.rand(80, 80, dtype=dtype, device=device)
-    compressed_x = compressor.compress(x)
-    compressed_y = compressor.compress(y)
-    print(compressed_x.coefficientss)
+    blocks_y = compressor.block(y)
+    differences_y = compressor.normalize(blocks_y)
+    coefficient_y = compressor.blockwise_transform(differences_y[:, :, :, :])
+
+    print((coefficient_y - coefficient_x).max())
 
 
 if __name__ == "__main__":
