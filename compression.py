@@ -270,6 +270,7 @@ class Compressor:
                 self.transformer_tensor = transformer_tensor
             else:
                 self.inverse_transformer_tensor = transformer_tensor
+            self.n_coefficients = n_coefficients
 
             self.transform_tensor_directory.mkdir(parents=True, exist_ok=True)
             torch.save(transformer_tensor, transform_tensor_path)
