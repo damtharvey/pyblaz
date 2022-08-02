@@ -1,5 +1,7 @@
 import argparse
 
+from sqlalchemy import false
+
 import compression
 import torch
 from datetime import datetime
@@ -8,13 +10,20 @@ from datetime import datetime
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dimensions", type=int, default=2)
-    parser.add_argument("--block-size", type=int, default=8, help="size of a hypercubic block")
+    parser.add_argument(
+        "--block-size", type=int, default=8, help="size of a hypercubic block"
+    )
     parser.add_argument(
         "--index-dtype",
         type=str,
         default="int8",
         choices=(
-            index_dtypes := {"int8": torch.int8, "int16": torch.int16, "int32": torch.int32, "int64": torch.int64}
+            index_dtypes := {
+                "int8": torch.int8,
+                "int16": torch.int16,
+                "int32": torch.int32,
+                "int64": torch.int64,
+            }
         ),
     )
     args = parser.parse_args()
@@ -29,7 +38,9 @@ def main():
         device=device,
     )
 
-    print("size,compress,add,compressed_add,subtract,compressed_subtract,multiply,compressed_multiply,decompress")
+    print(
+        "size,compress,add,compressed_add,subtract,compressed_subtract,multiply,compressed_multiply,decompress"
+    )
 
     # warmup
     warmup(compressor, device, dtype)

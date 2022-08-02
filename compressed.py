@@ -27,11 +27,13 @@ class CompressedTensor:
         first_elements: torch.Tensor,
         biggest_coefficients: torch.Tensor,
         indicess: torch.Tensor,
+        coefficientss: torch.Tensor,
     ):
         self.original_shape = original_shape
         self.first_elements = first_elements
         self.biggest_coefficients = biggest_coefficients
         self.indicess = indicess
+        self.coefficientss = coefficientss
 
     @property
     def n_dimensions(self) -> int:
@@ -49,7 +51,11 @@ class CompressedTensor:
         """
         :returns: compressed block at the indices
         """
-        return CompressedBlock(self.first_elements[item], self.biggest_coefficients[item], self.indicess[item])
+        return CompressedBlock(
+            self.first_elements[item],
+            self.biggest_coefficients[item],
+            self.indicess[item],
+        )
 
     def __setitem__(self, key: tuple[int, ...] or int, value: CompressedBlock):
         self.first_elements[key] = value.first_element
@@ -60,23 +66,34 @@ class CompressedTensor:
         """
         :returns: negated compressed tensor.
         """
-        return CompressedTensor(self.original_shape, -self.first_elements, self.biggest_coefficients, -self.indicess)
+        return CompressedTensor(
+            self.original_shape,
+            -self.first_elements,
+            self.biggest_coefficients,
+            -self.indicess,
+        )
 
     def __add__(self, other):
         """
         :returns: sum of two compressed tensors
         """
         indices = (
-            self.indicess * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
-            + other.indicess * other.biggest_coefficients[(...,) + (None,) * other.n_dimensions]
+            self.indicess
+            * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+            + other.indicess
+            * other.biggest_coefficients[(...,) + (None,) * other.n_dimensions]
         )
 
         proportion_of_radius = (
-            indices.norm(torch.inf, tuple(range(self.n_dimensions, 2 * self.n_dimensions)))
+            indices.norm(
+                torch.inf, tuple(range(self.n_dimensions, 2 * self.n_dimensions))
+            )
             / INDICES_RADIUS[self.indicess.dtype]
         )
         indices = torch.nan_to_num(
-            (indices / proportion_of_radius[(...,) + (None,) * other.n_dimensions]).round().type(self.indicess.dtype)
+            (indices / proportion_of_radius[(...,) + (None,) * other.n_dimensions])
+            .round()
+            .type(self.indicess.dtype)
         )
         return CompressedTensor(
             self.original_shape,
@@ -95,7 +112,9 @@ class CompressedTensor:
         """
         :returns: compressed tensor scaled by a scalar
         """
-        if isinstance(other, (float, int)) or (isinstance(other, torch.Tensor) and other.numel() == 1):
+        if isinstance(other, (float, int)) or (
+            isinstance(other, torch.Tensor) and other.numel() == 1
+        ):
             product = CompressedTensor(
                 self.original_shape,
                 self.first_elements * other,
@@ -104,7 +123,9 @@ class CompressedTensor:
             )
             return product
         else:
-            raise TypeError(f"Multiply not defined between {type(self)} and {type(other)}.")
+            raise TypeError(
+                f"Multiply not defined between {type(self)} and {type(other)}."
+            )
 
     def __rmul__(self, other):
         """
