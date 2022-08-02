@@ -49,7 +49,7 @@ def main():
         x = torch.rand(size, size, dtype=dtype, device=device)
         y = torch.rand(size, size, dtype=dtype, device=device)
 
-        # compress
+        # compresscompressed_x = compressor.compress(x)
         start_time = datetime.now()
         compressed_x = compressor.compress(x)
         compressed_y = compressor.compress(y)

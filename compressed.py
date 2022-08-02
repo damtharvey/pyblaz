@@ -27,13 +27,11 @@ class CompressedTensor:
         first_elements: torch.Tensor,
         biggest_coefficients: torch.Tensor,
         indicess: torch.Tensor,
-        coefficientss: torch.Tensor,
     ):
         self.original_shape = original_shape
         self.first_elements = first_elements
         self.biggest_coefficients = biggest_coefficients
         self.indicess = indicess
-        self.coefficientss = coefficientss
 
     @property
     def n_dimensions(self) -> int:

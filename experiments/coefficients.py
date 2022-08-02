@@ -39,8 +39,10 @@ def main():
     )
 
     x = torch.rand(80, 80, dtype=dtype, device=device)
-    coefficients_x = compressor.compress(x).coefficientss
-    print(coefficients_x)
+    y = torch.rand(80, 80, dtype=dtype, device=device)
+    compressed_x = compressor.compress(x)
+    compressed_y = compressor.compress(y)
+    print(compressed_x.coefficientss)
 
 
 if __name__ == "__main__":
