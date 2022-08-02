@@ -251,23 +251,18 @@ class Compressor:
             n_coefficients = math.prod(self.block_shape)
 
         if n_coefficients == self.n_coefficients and (
-            (self.transformer_tensor and not inverse)
-            or (self.inverse_transformer_tensor and inverse)
+            (self.transformer_tensor is not None and not inverse)
+            or (self.inverse_transformer_tensor is not None and inverse)
         ):
-            transformer_tensor = (
-                self.transformer_tensor
-                if not inverse
-                else self.inverse_transformer_tensor
-            )
+            transformer_tensor = self.transformer_tensor if not inverse else self.inverse_transformer_tensor
         else:
             transform_tensor_path = self.transform_tensor_directory / (
-                "x".join(str(size) for size in self.block_shape)
-                + f"_{n_coefficients}c_{self.dtype.__repr__()[6:]}_"
+                "x".join(str(size) for size in self.block_shape) + f"_{n_coefficients}c_{self.dtype.__repr__()[6:]}_"
                 f"{'inverse_' if inverse else ''}{self.transform.__name__}_tensor.pth"
             )
             if transform_tensor_path.exists():
                 transformer_tensor = torch.load(transform_tensor_path).to(self.device)
-            else:
+            elif n_coefficients < math.prod(self.block_shape):
                 transformer_tensor = torch.zeros(
                     *self.block_shape * 2,
                     dtype=self.dtype,
@@ -285,26 +280,41 @@ class Compressor:
                     total=math.prod(self.block_shape),
                 ):
                     for frequency_indices in all_frequency_indices:
-                        transformer_tensor[
-                            (*element_indices, *frequency_indices)
-                        ] = math.prod(
-                            self.transform(
-                                size, element_index, frequency_index, inverse
-                            )
+                        transformer_tensor[(*element_indices, *frequency_indices)] = math.prod(
+                            self.transform(size, element_index, frequency_index, inverse)
                             for size, element_index, frequency_index in zip(
                                 self.block_shape, element_indices, frequency_indices
                             )
                         )
+            else:
+                transform_matrices = {
+                    block_size: torch.tensor(
+                        [
+                            [self.transform(block_size, element, frequency, inverse) for frequency in range(block_size)]
+                            for element in range(block_size)
+                        ],
+                        dtype=self.dtype,
+                        device=self.device,
+                    )
+                    for block_size in set(self.block_shape)
+                }
+                einsum_arguments = []
+                for direction, block_size in enumerate(self.block_shape):
+                    einsum_arguments.append(transform_matrices[block_size])
+                    einsum_arguments.append((direction, direction + self.n_dimensions))
 
-                if not inverse:
-                    self.transformer_tensor = transformer_tensor
-                else:
-                    self.inverse_transformer_tensor = transformer_tensor
+                transformer_tensor = torch.einsum(*einsum_arguments)
 
-                self.transform_tensor_directory.mkdir(parents=True, exist_ok=True)
-                torch.save(transformer_tensor, transform_tensor_path)
+            if not inverse:
+                self.transformer_tensor = transformer_tensor
+            else:
+                self.inverse_transformer_tensor = transformer_tensor
+            self.n_coefficients = n_coefficients
 
-        transformed = torch.einsum(
+            self.transform_tensor_directory.mkdir(parents=True, exist_ok=True)
+            torch.save(transformer_tensor, transform_tensor_path)
+
+        return torch.einsum(
             blocked_tensor,
             # blocks, intrablock
             tuple(range(2 * self.n_dimensions)),
@@ -312,11 +322,8 @@ class Compressor:
             # intrablock, coefficients
             tuple(range(self.n_dimensions, 3 * self.n_dimensions)),
             # blocks, coefficients
-            tuple(range(self.n_dimensions))
-            + tuple(range(2 * self.n_dimensions, 3 * self.n_dimensions)),
+            tuple(range(self.n_dimensions)) + tuple(range(2 * self.n_dimensions, 3 * self.n_dimensions)),
         )
-
-        return transformed
 
     def bin(self, coefficientss: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
