@@ -507,7 +507,7 @@ class Compressor:
         :return: dot product
         """
         assert (
-            compressed_a.n_dimensions == 2 and compressed_b.n_dimensions == 2
+                compressed_a.n_dimensions == 2 and compressed_b.n_dimensions == 2
         ), "Dot product not defined for dimensions other than 2."
 
         a_block_index = row >> self.log_2_block_shape[0]
@@ -515,21 +515,24 @@ class Compressor:
         block_row = row % self.block_shape[0]
         block_column = column % self.block_shape[1]
 
-        return sum(
-            self.dot_product_block(
-                compressed_a[a_index], compressed_b[b_index], block_row, block_column
-            )
-            for a_index, b_index in zip(
-                (
-                    (a_block_index, column_index)
-                    for column_index in range(compressed_a.blocks_shape[0])
-                ),
-                (
-                    (row_index, b_block_index)
-                    for row_index in range(compressed_b.blocks_shape[1])
-                ),
+        decompressed_a_row_of_blocks = self.decompress(
+            CompressedTensor(
+                (int(compressed_a.block_shape[0]), compressed_a.original_shape[1]),
+                compressed_a.first_elements[a_block_index][None, :],
+                compressed_a.biggest_coefficients[a_block_index][None, :],
+                compressed_a.indicess[a_block_index][None, :],
             )
         )
+        decompressed_b_column_of_blocks = self.decompress(
+            CompressedTensor(
+                (compressed_b.original_shape[0], int(compressed_b.block_shape[1])),
+                compressed_b.first_elements[:, b_block_index][:, None],
+                compressed_b.biggest_coefficients[:, b_block_index][:, None],
+                compressed_b.indicess[:, b_block_index][:, None],
+            )
+        )
+
+        return decompressed_a_row_of_blocks[block_row] @ decompressed_b_column_of_blocks[:, block_column]
 
     def dot_product_block(
         self, a: CompressedBlock, b: CompressedBlock, row: int, column: int
