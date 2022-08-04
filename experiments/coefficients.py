@@ -11,9 +11,7 @@ import numpy as np
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dimensions", type=int, default=2)
-    parser.add_argument(
-        "--block-size", type=int, default=8, help="size of a hypercubic block"
-    )
+    parser.add_argument("--block-size", type=int, default=8, help="size of a hypercubic block")
     parser.add_argument(
         "--index-dtype",
         type=str,
@@ -41,13 +39,13 @@ def main():
 
     x = torch.rand(80, 80, dtype=dtype, device=device)
     blocks_x = compressor.block(x)
-    differences_x = compressor.normalize(blocks_x)
-    coefficient_x = compressor.blockwise_transform(differences_x[:, :, :, :])
+    # differences_x = compressor.normalize(blocks_x)
+    coefficient_x = compressor.blockwise_transform(blocks_x)
 
     y = torch.rand(80, 80, dtype=dtype, device=device)
     blocks_y = compressor.block(y)
-    differences_y = compressor.normalize(blocks_y)
-    coefficient_y = compressor.blockwise_transform(differences_y[:, :, :, :])
+    # differences_y = compressor.normalize(blocks_y)
+    coefficient_y = compressor.blockwise_transform(blocks_y)
 
     print((coefficient_y - coefficient_x).max())
 
