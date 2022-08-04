@@ -69,13 +69,9 @@ class Compressor:
         blocked = self.block(tensor)
         indicess, biggest_coefficients = self.bin(self.blockwise_transform(self.normalize(blocked)))
 
-<<<<<<< HEAD
-        return CompressedTensor(tensor.shape, first_elements, biggest_coefficients, indicess)
-=======
         return CompressedTensor(
             tensor.shape, blocked[(...,) + (0,) * self.n_dimensions], biggest_coefficients, indicess
         )
->>>>>>> 76704a7dab1601c87596c6ad6a7585b8a5c8c0e2
 
     def decompress(self, compressed_tensor: CompressedTensor):
         """
@@ -85,19 +81,12 @@ class Compressor:
             f"Compressor dimensionality ({self.n_dimensions}) "
             f"must match tensor dimensionality ({compressed_tensor.n_dimensions})."
         )
-<<<<<<< HEAD
-
-        differences = self.blockwise_transform(self.bin_inverse(compressed_tensor), inverse=True)
-        unnormalized = self.normalize_inverse(compressed_tensor.first_elements, differences)
-        unblocked = self.block_inverse(unnormalized)
-=======
         unblocked = self.block_inverse(
             self.normalize_inverse(
                 compressed_tensor.first_elements,
                 self.blockwise_transform(self.bin_inverse(compressed_tensor), inverse=True),
             )
         )
->>>>>>> 76704a7dab1601c87596c6ad6a7585b8a5c8c0e2
 
         return eval(f"unblocked[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
 
@@ -224,12 +213,8 @@ class Compressor:
             n_coefficients = math.prod(self.block_shape)
 
         if n_coefficients == self.n_coefficients and (
-<<<<<<< HEAD
-            (self.transformer_tensor and not inverse) or (self.inverse_transformer_tensor and inverse)
-=======
             (self.transformer_tensor is not None and not inverse)
             or (self.inverse_transformer_tensor is not None and inverse)
->>>>>>> 76704a7dab1601c87596c6ad6a7585b8a5c8c0e2
         ):
             transformer_tensor = self.transformer_tensor if not inverse else self.inverse_transformer_tensor
         else:
@@ -468,16 +453,6 @@ class Compressor:
         block_row = row % self.block_shape[0]
         block_column = column % self.block_shape[1]
 
-<<<<<<< HEAD
-        return sum(
-            self.dot_product_block(compressed_a[a_index], compressed_b[b_index], block_row, block_column)
-            for a_index, b_index in zip(
-                ((a_block_index, column_index) for column_index in range(compressed_a.blocks_shape[0])),
-                ((row_index, b_block_index) for row_index in range(compressed_b.blocks_shape[1])),
-            )
-        )
-
-=======
         decompressed_a_row_of_blocks = self.decompress(
             CompressedTensor(
                 (int(compressed_a.block_shape[0]), compressed_a.original_shape[1]),
@@ -497,7 +472,6 @@ class Compressor:
 
         return decompressed_a_row_of_blocks[block_row] @ decompressed_b_column_of_blocks[:, block_column]
 
->>>>>>> 76704a7dab1601c87596c6ad6a7585b8a5c8c0e2
     def dot_product_block(self, a: CompressedBlock, b: CompressedBlock, row: int, column: int) -> float:
         """
         The (spatial) dot product of a row in a and column in b.
