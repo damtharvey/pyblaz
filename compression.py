@@ -67,13 +67,15 @@ class Compressor:
         )
 
         blocked = self.block(tensor)
-        first_elements = blocked[(...,) + (0,) * self.n_dimensions]
-        differences = self.normalize(blocked)
-        coefficientss = self.blockwise_transform(differences)
+        indicess, biggest_coefficients = self.bin(self.blockwise_transform(self.normalize(blocked)))
 
-        indicess, biggest_coefficients = self.bin(coefficientss)
-
+<<<<<<< HEAD
         return CompressedTensor(tensor.shape, first_elements, biggest_coefficients, indicess)
+=======
+        return CompressedTensor(
+            tensor.shape, blocked[(...,) + (0,) * self.n_dimensions], biggest_coefficients, indicess
+        )
+>>>>>>> 76704a7dab1601c87596c6ad6a7585b8a5c8c0e2
 
     def decompress(self, compressed_tensor: CompressedTensor):
         """
@@ -83,10 +85,19 @@ class Compressor:
             f"Compressor dimensionality ({self.n_dimensions}) "
             f"must match tensor dimensionality ({compressed_tensor.n_dimensions})."
         )
+<<<<<<< HEAD
 
         differences = self.blockwise_transform(self.bin_inverse(compressed_tensor), inverse=True)
         unnormalized = self.normalize_inverse(compressed_tensor.first_elements, differences)
         unblocked = self.block_inverse(unnormalized)
+=======
+        unblocked = self.block_inverse(
+            self.normalize_inverse(
+                compressed_tensor.first_elements,
+                self.blockwise_transform(self.bin_inverse(compressed_tensor), inverse=True),
+            )
+        )
+>>>>>>> 76704a7dab1601c87596c6ad6a7585b8a5c8c0e2
 
         return eval(f"unblocked[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
 
@@ -213,7 +224,12 @@ class Compressor:
             n_coefficients = math.prod(self.block_shape)
 
         if n_coefficients == self.n_coefficients and (
+<<<<<<< HEAD
             (self.transformer_tensor and not inverse) or (self.inverse_transformer_tensor and inverse)
+=======
+            (self.transformer_tensor is not None and not inverse)
+            or (self.inverse_transformer_tensor is not None and inverse)
+>>>>>>> 76704a7dab1601c87596c6ad6a7585b8a5c8c0e2
         ):
             transformer_tensor = self.transformer_tensor if not inverse else self.inverse_transformer_tensor
         else:
@@ -223,7 +239,7 @@ class Compressor:
             )
             if transform_tensor_path.exists():
                 transformer_tensor = torch.load(transform_tensor_path).to(self.device)
-            else:
+            elif n_coefficients < math.prod(self.block_shape):
                 transformer_tensor = torch.zeros(
                     *self.block_shape * 2,
                     dtype=self.dtype,
@@ -247,16 +263,35 @@ class Compressor:
                                 self.block_shape, element_indices, frequency_indices
                             )
                         )
+            else:
+                transform_matrices = {
+                    block_size: torch.tensor(
+                        [
+                            [self.transform(block_size, element, frequency, inverse) for frequency in range(block_size)]
+                            for element in range(block_size)
+                        ],
+                        dtype=self.dtype,
+                        device=self.device,
+                    )
+                    for block_size in set(self.block_shape)
+                }
+                einsum_arguments = []
+                for direction, block_size in enumerate(self.block_shape):
+                    einsum_arguments.append(transform_matrices[block_size])
+                    einsum_arguments.append((direction, direction + self.n_dimensions))
 
-                if not inverse:
-                    self.transformer_tensor = transformer_tensor
-                else:
-                    self.inverse_transformer_tensor = transformer_tensor
+                transformer_tensor = torch.einsum(*einsum_arguments)
 
-                self.transform_tensor_directory.mkdir(parents=True, exist_ok=True)
-                torch.save(transformer_tensor, transform_tensor_path)
+            if not inverse:
+                self.transformer_tensor = transformer_tensor
+            else:
+                self.inverse_transformer_tensor = transformer_tensor
+            self.n_coefficients = n_coefficients
 
-        transformed = torch.einsum(
+            self.transform_tensor_directory.mkdir(parents=True, exist_ok=True)
+            torch.save(transformer_tensor, transform_tensor_path)
+
+        return torch.einsum(
             blocked_tensor,
             # blocks, intrablock
             tuple(range(2 * self.n_dimensions)),
@@ -266,8 +301,6 @@ class Compressor:
             # blocks, coefficients
             tuple(range(self.n_dimensions)) + tuple(range(2 * self.n_dimensions, 3 * self.n_dimensions)),
         )
-
-        return transformed
 
     def bin(self, coefficientss: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -435,6 +468,7 @@ class Compressor:
         block_row = row % self.block_shape[0]
         block_column = column % self.block_shape[1]
 
+<<<<<<< HEAD
         return sum(
             self.dot_product_block(compressed_a[a_index], compressed_b[b_index], block_row, block_column)
             for a_index, b_index in zip(
@@ -443,6 +477,27 @@ class Compressor:
             )
         )
 
+=======
+        decompressed_a_row_of_blocks = self.decompress(
+            CompressedTensor(
+                (int(compressed_a.block_shape[0]), compressed_a.original_shape[1]),
+                compressed_a.first_elements[a_block_index][None, :],
+                compressed_a.biggest_coefficients[a_block_index][None, :],
+                compressed_a.indicess[a_block_index][None, :],
+            )
+        )
+        decompressed_b_column_of_blocks = self.decompress(
+            CompressedTensor(
+                (compressed_b.original_shape[0], int(compressed_b.block_shape[1])),
+                compressed_b.first_elements[:, b_block_index][:, None],
+                compressed_b.biggest_coefficients[:, b_block_index][:, None],
+                compressed_b.indicess[:, b_block_index][:, None],
+            )
+        )
+
+        return decompressed_a_row_of_blocks[block_row] @ decompressed_b_column_of_blocks[:, block_column]
+
+>>>>>>> 76704a7dab1601c87596c6ad6a7585b8a5c8c0e2
     def dot_product_block(self, a: CompressedBlock, b: CompressedBlock, row: int, column: int) -> float:
         """
         The (spatial) dot product of a row in a and column in b.
