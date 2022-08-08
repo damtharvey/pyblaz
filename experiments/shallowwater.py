@@ -6,6 +6,18 @@ from numpy import linalg as LA
 
 import torch
 
+
+def diagonalOrder(arr, n, m):
+
+    ordering_elements = [[] for i in range(n + m - 1)]
+
+    for i in range(m):
+        for j in range(n):
+            ordering_elements[i + j].append(arr[j][i])
+
+    return ordering_elements
+
+
 coefficient_difference = []
 weighted_coefficient_difference = []
 absolute_error = []
@@ -13,7 +25,7 @@ relative_error = []
 actual_error = []
 actual_relative_error = []
 timesteps = []
-for timestep in range(500):
+for timestep in range(1):
     txt_file0 = open("./data/ShallowWatersEquations/output/" + str(timestep) + ".txt", "r")
     file_content0 = txt_file0.read()
 
@@ -68,21 +80,38 @@ for timestep in range(500):
     # differences_a = compressor.normalize(blocks_a)
     coefficient_a = compressor.blockwise_transform(blocks_a)
 
-    weighted_coefficient_sum_a = 0.0
+    coefficient_sum_blockwise = []
     for blocks_rowwise in range(coefficient_a.size()[0]):
+        temp = []
         for blocks_columnwise in range(coefficient_a.size()[1]):
-            for row_in_block in range(coefficient_a.size()[2]):
-                weighted_coefficient_sum_a += (
-                    0.8 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][0]
-                    + 0.1 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][1]
-                    + 0.05 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][2]
-                    + 0.02 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][3]
-                    + 0.01 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][4]
-                    + 0.013 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][5]
-                    + 0.005 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][6]
-                    + 0.002 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][7]
-                )
+            res = []
+            ordered_elements = diagonalOrder(np.array(coefficient_a[blocks_rowwise][blocks_columnwise]), 8, 8)
+            for i in range(len(ordered_elements)):
+                res.append(sum(ordered_elements[i]))
+            temp.append(res)
+        coefficient_sum_blockwise.append(temp)
+    print(coefficient_sum_blockwise)
+    print(len(coefficient_sum_blockwise))
+    print(len(coefficient_sum_blockwise[0]))
+    print(len(coefficient_sum_blockwise[0][0]))
 
+    for blocks_rowwise in range(len(coefficient_sum_blockwise)):
+        for blocks_columnwise in range(len(coefficient_sum_blockwise[blocks_rowwise])):
+            print(coefficient_sum_blockwise[blocks_rowwise][blocks_columnwise][0])
+
+    # print(weighted_coefficient_sum_a)
+
+    """
+    weighted_coefficient_sum_a += (
+        0.8 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][0]
+        + 0.1 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][1]
+        + 0.05 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][2]
+        + 0.02 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][3]
+        + 0.01 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][4]
+        + 0.013 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][5]
+        + 0.005 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][6]
+        + 0.002 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][7]
+    )
     blocks_b = compressor.block(b)
     # differences_b = compressor.normalize(blocks_b)
     coefficient_b = compressor.blockwise_transform(blocks_b)
@@ -143,4 +172,4 @@ plt.xlabel("timestep")
 plt.ylabel("L infinity error")
 plt.legend()
 plt.savefig("L_infinity_error_graph_relative_error.png")
-plt.close()
+plt.close()"""
