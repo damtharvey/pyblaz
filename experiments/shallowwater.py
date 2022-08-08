@@ -7,6 +7,7 @@ from numpy import linalg as LA
 import torch
 
 coefficient_difference = []
+weighted_coefficient_difference = []
 absolute_error = []
 relative_error = []
 actual_error = []
@@ -67,9 +68,38 @@ for timestep in range(500):
     # differences_a = compressor.normalize(blocks_a)
     coefficient_a = compressor.blockwise_transform(blocks_a)
 
+    weighted_coefficient_sum_a = 0.0
+    for blocks_rowwise in range(coefficient_a.size()[0]):
+        for blocks_columnwise in range(coefficient_a.size()[1]):
+            for row_in_block in range(coefficient_a.size()[2]):
+                weighted_coefficient_sum_a += (
+                    0.8 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][0]
+                    + 0.1 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][1]
+                    + 0.05 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][2]
+                    + 0.02 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][3]
+                    + 0.01 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][4]
+                    + 0.013 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][5]
+                    + 0.005 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][6]
+                    + 0.002 * coefficient_a[blocks_rowwise][blocks_columnwise][row_in_block][7]
+                )
+
     blocks_b = compressor.block(b)
     # differences_b = compressor.normalize(blocks_b)
     coefficient_b = compressor.blockwise_transform(blocks_b)
+    weighted_coefficient_sum_b = 0.0
+    for blocks_rowwise in range(coefficient_b.size()[0]):
+        for blocks_columnwise in range(coefficient_b.size()[1]):
+            for row_in_block in range(coefficient_b.size()[2]):
+                weighted_coefficient_sum_b += (
+                    0.8 * coefficient_b[blocks_rowwise][blocks_columnwise][row_in_block][0]
+                    + 0.1 * coefficient_b[blocks_rowwise][blocks_columnwise][row_in_block][1]
+                    + 0.05 * coefficient_b[blocks_rowwise][blocks_columnwise][row_in_block][2]
+                    + 0.02 * coefficient_b[blocks_rowwise][blocks_columnwise][row_in_block][3]
+                    + 0.013 * coefficient_b[blocks_rowwise][blocks_columnwise][row_in_block][4]
+                    + 0.01 * coefficient_b[blocks_rowwise][blocks_columnwise][row_in_block][5]
+                    + 0.005 * coefficient_b[blocks_rowwise][blocks_columnwise][row_in_block][6]
+                    + 0.002 * coefficient_b[blocks_rowwise][blocks_columnwise][row_in_block][7]
+                )
 
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
@@ -78,6 +108,7 @@ for timestep in range(500):
     decompressed_subtraction = compressor.decompress(compressed_b - compressed_a)
     timesteps.append(timestep)
     coefficient_difference.append((coefficient_b - coefficient_a).norm(float("inf")))
+    weighted_coefficient_difference.append(abs(weighted_coefficient_sum_b - weighted_coefficient_sum_a))
     absolute_error.append(decompressed_subtraction.norm(float("inf")))
     relative_error_tensor = np.nan_to_num(decompressed_subtraction / compressor.decompress(compressed_a))
     relative_error.append(LA.norm(relative_error_tensor, np.inf))
@@ -88,6 +119,7 @@ for timestep in range(500):
 # print(relative_error)
 # print(compressor.decompress(compressed_a))
 plt.plot(np.asarray(timesteps), np.asarray(coefficient_difference), label="coefficient difference")
+plt.plot(np.asarray(timesteps), np.asarray(weighted_coefficient_difference), label="weighted coefficient difference")
 plt.title("Coefficient difference of Shallow water equations")
 plt.xlabel("timestep")
 plt.ylabel("L infinity error")
