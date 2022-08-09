@@ -18,10 +18,13 @@ def diagonalOrder(arr, n, m):
     return ordering_elements
 
 
+weighted_sum_coefficients = []
+
+first_coeff_diff = []
 coefficient_difference = []
 first_coefficient_difference = []
 timesteps = []
-for timestep in range(500):
+for timestep in range(10):
     txt_file0 = open("./data/ShallowWatersEquations/output/" + str(timestep) + ".txt", "r")
     file_content0 = txt_file0.read()
 
@@ -77,43 +80,68 @@ for timestep in range(500):
     coefficient_a = compressor.blockwise_transform(blocks_a)
     first_coefficient_a = coefficient_a[..., 0, 0]
 
-    # coefficient_sum_blockwise = []
-    # for blocks_rowwise in range(coefficient_a.size()[0]):
-    #     temp = []
-    #     for blocks_columnwise in range(coefficient_a.size()[1]):
-    #         res = []
-    #         ordered_elements = diagonalOrder(np.array(coefficient_a[blocks_rowwise][blocks_columnwise]), 8, 8)
-    #         for i in range(len(ordered_elements)):
-    #             res.append(sum(ordered_elements[i]))
-    #         temp.append(res)
-    #     coefficient_sum_blockwise.append(temp)
-    # print(coefficient_sum_blockwise)
-    # print(len(coefficient_sum_blockwise))
-    # print(len(coefficient_sum_blockwise[0]))
-    # print(len(coefficient_sum_blockwise[0][0]))
+    coefficient_sum_blockwise_a = []
+    for blocks_rowwise in range(coefficient_a.size()[0]):
+        temp = []
+        for blocks_columnwise in range(coefficient_a.size()[1]):
+            res = []
+            ordered_elements = diagonalOrder(np.array(coefficient_a[blocks_rowwise][blocks_columnwise]), 8, 8)
+            for i in range(len(ordered_elements)):
+                res.append(sum(ordered_elements[i]))
+            temp.append(res)
+        coefficient_sum_blockwise_a.append(temp)
 
-    # for blocks_rowwise in range(len(coefficient_sum_blockwise)):
-    #     for blocks_columnwise in range(len(coefficient_sum_blockwise[blocks_rowwise])):
-    #         first_coefficients.append(coefficient_sum_blockwise[blocks_rowwise][blocks_columnwise][0])
+    weighted_sum_coefficients_a = np.zeros(15)
 
-    # print(weighted_coefficient_sum_a)
+    weight_a = 1.0
+    for blocks_rowwise in range(len(coefficient_sum_blockwise_a)):
+        for blocks_columnwise in range(len(coefficient_sum_blockwise_a[blocks_rowwise])):
+            for every_element in range(len(coefficient_sum_blockwise_a[blocks_rowwise][blocks_columnwise])):
+                weighted_sum_coefficients_a[every_element] += (
+                    weight_a * coefficient_sum_blockwise_a[blocks_rowwise][blocks_columnwise][every_element]
+                )
+                weight_a /= 2
+    print(sum(weighted_sum_coefficients_a))
 
     blocks_b = compressor.block(b)
     # differences_b = compressor.normalize(blocks_b)
     coefficient_b = compressor.blockwise_transform(blocks_b)
     first_coefficient_b = coefficient_b[..., 0, 0]
 
+    coefficient_sum_blockwise_b = []
+    for blocks_rowwise in range(coefficient_b.size()[0]):
+        temp = []
+        for blocks_columnwise in range(coefficient_b.size()[1]):
+            res = []
+            ordered_elements = diagonalOrder(np.array(coefficient_b[blocks_rowwise][blocks_columnwise]), 8, 8)
+            for i in range(len(ordered_elements)):
+                res.append(sum(ordered_elements[i]))
+            temp.append(res)
+        coefficient_sum_blockwise_b.append(temp)
+
+    weighted_sum_coefficients_b = np.zeros(15)
+    weight_b = 1.0
+    for blocks_rowwise in range(len(coefficient_sum_blockwise_b)):
+        for blocks_columnwise in range(len(coefficient_sum_blockwise_b[blocks_rowwise])):
+            for every_element in range(len(coefficient_sum_blockwise_b[blocks_rowwise][blocks_columnwise])):
+                weighted_sum_coefficients_b[every_element] += (
+                    weight_b * coefficient_sum_blockwise_b[blocks_rowwise][blocks_columnwise][every_element]
+                )
+                weight_b /= 2
+
     timesteps.append(timestep)
     coefficient_difference.append((coefficient_b - coefficient_a).norm(float("inf")))
     first_coefficient_difference.append((first_coefficient_b - first_coefficient_a).norm(float("inf")))
-    first_coeff_diff = first_coefficient_b - first_coefficient_a
-    print(np.unravel_index(np.argmax(first_coeff_diff, axis=None), first_coeff_diff.shape), first_coeff_diff.max())
+    first_coeff_diff.append(first_coefficient_b - first_coefficient_a)
+    weighted_sum_coefficients.append((weighted_sum_coefficients_b - weighted_sum_coefficients_a).max())
+    # print(np.unravel_index(np.argmax(first_coeff_diff, axis=None), first_coeff_diff.shape), first_coeff_diff.max())
 
 
 # print(relative_error)
 # print(compressor.decompress(compressed_a))
 plt.plot(np.asarray(timesteps), np.asarray(coefficient_difference), label="coefficient difference")
 plt.plot(np.asarray(timesteps), np.asarray(first_coefficient_difference), label="first coefficient difference")
+plt.plot(np.asarray(timesteps), np.asarray(weighted_sum_coefficients), label="weighted coefficient difference")
 plt.title("Coefficient difference of Shallow water equations")
 plt.xlabel("timestep")
 plt.ylabel("L infinity error")
