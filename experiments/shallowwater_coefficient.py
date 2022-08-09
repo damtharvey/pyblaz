@@ -132,7 +132,7 @@ for timestep in range(10):
     timesteps.append(timestep)
     coefficient_difference.append((coefficient_b - coefficient_a).norm(float("inf")))
     first_coefficient_difference.append((first_coefficient_b - first_coefficient_a).norm(float("inf")))
-    first_coeff_diff.append(first_coefficient_b - first_coefficient_a)
+
     weighted_sum_coefficients.append((weighted_sum_coefficients_b - weighted_sum_coefficients_a).max())
     # print(np.unravel_index(np.argmax(first_coeff_diff, axis=None), first_coeff_diff.shape), first_coeff_diff.max())
 
