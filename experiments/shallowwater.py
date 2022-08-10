@@ -96,8 +96,8 @@ for timestep in range(500):
 
     timesteps.append(timestep)
 
-    absolute_error_fastmathvsO3.append(torch.var(subtraction_fastmathvsO3))
-    absolute_error_ftzvsO3.append(torch.var(subtraction_ftzvsO3))
+    absolute_error_fastmathvsO3.append(subtraction_fastmathvsO3.max())
+    absolute_error_ftzvsO3.append(subtraction_ftzvsO3.max())
 
     decompressed_subtraction_fastmathvsO3 = abs(compressor.decompress(compressed_b - compressed_a))
     decompressed_subtraction_ftzvsO3 = abs(compressor.decompress(compressed_c - compressed_a))
@@ -114,19 +114,19 @@ plt.plot(
 )
 plt.plot(np.asarray(timesteps), np.asarray(absolute_error_ftzvsO3), label="ftz vs O3 w/o compression", color="black")
 
-# plt.plot(
-#     np.asarray(absolute_error_fastmathvsO3_compressed),
-#     np.asarray(timesteps),
-#     label="fastmath vs O3 compressed",
-#     color="cyan",
-# )
-# plt.plot(
-#     np.asarray(absolute_error_ftzvsO3_compressed), np.asarray(timesteps), label="ftz vs O3 compressed", color="green"
-# )
+plt.plot(
+    np.asarray(timesteps),
+    np.asarray(absolute_error_fastmathvsO3_compressed),
+    label="fastmath vs O3 compressed",
+    color="cyan",
+)
+plt.plot(
+    np.asarray(timesteps), np.asarray(absolute_error_ftzvsO3_compressed), label="ftz vs O3 compressed", color="green"
+)
 
-plt.title("variance error of Shallow water equations")
+plt.title("max error of Shallow water equations")
 plt.xlabel("timestep")
-plt.ylabel("var error")
+plt.ylabel("max error")
 plt.legend()
-plt.savefig("variance_error_graph_absolute_error.png")
+plt.savefig("max_error_graph_absolute_error.png")
 plt.close()
