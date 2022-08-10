@@ -6,12 +6,13 @@ from numpy import linalg as LA
 
 import torch
 
-
-absolute_error = []
-relative_error = []
-actual_error = []
-actual_relative_error = []
 timesteps = []
+
+absolute_error_fastmathvsO3 = []
+absolute_error_ftzvsO3 = []
+
+absolute_error_fastmathvsO3_compressed = []
+absolute_error_ftzvsO3_compressed = []
 
 for timestep in range(500):
     txt_file0 = open("./data/ShallowWatersEquations/output/" + str(timestep) + ".txt", "r")
@@ -56,6 +57,27 @@ for timestep in range(500):
             temp1.append(float(j))
         final_list1.append(temp1)
 
+    txt_file2 = open("./data/ShallowWatersEquations/ftz/" + str(timestep) + ".txt", "r")
+    file_content2 = txt_file2.read()
+
+    content_list2 = file_content2.split("\n")
+
+    x = 80
+    list_of_lists2 = [content_list2[i : i + x] for i in range(0, len(content_list2), x)]
+    newlist2 = []
+    for word in list_of_lists2[0]:
+        word = word.split(",")
+        newlist2.append(word)
+
+    newlist2 = newlist2[:-1]
+    final_list2 = []
+    for i in newlist2:
+        temp = i[0].split(" ")
+        temp2 = []
+        for j in temp[:-1]:
+            temp2.append(float(j))
+        final_list2.append(temp2)
+
     dtype = torch.float64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -63,36 +85,48 @@ for timestep in range(500):
 
     a = torch.FloatTensor(final_list0)
     b = torch.FloatTensor(final_list1)
+    c = torch.FloatTensor(final_list2)
 
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
+    compressed_c = compressor.compress(c)
 
-    subtraction = b - a
+    subtraction_fastmathvsO3 = abs(b - a)
+    subtraction_ftzvsO3 = abs(c - a)
 
     timesteps.append(timestep)
-    decompressed_subtraction = compressor.decompress(compressed_b - compressed_a)
-    absolute_error.append(decompressed_subtraction.norm(float("inf")))
-    relative_error_tensor = np.nan_to_num(decompressed_subtraction / compressor.decompress(compressed_a))
-    relative_error.append(LA.norm(relative_error_tensor, np.inf))
-    # np.max(np.where(a==0, a.min(), a)
-    actual_error.append(subtraction.norm(float("inf")))
-    actual_relative_error.append(LA.norm((np.nan_to_num(subtraction / a)), np.inf))
+
+    absolute_error_fastmathvsO3.append(torch.mean(subtraction_fastmathvsO3))
+    absolute_error_ftzvsO3.append(torch.mean(subtraction_ftzvsO3))
+
+    decompressed_subtraction_fastmathvsO3 = abs(compressor.decompress(compressed_b - compressed_a))
+    decompressed_subtraction_ftzvsO3 = abs(compressor.decompress(compressed_c - compressed_a))
+
+    absolute_error_fastmathvsO3_compressed.append(torch.mean(decompressed_subtraction_fastmathvsO3))
+    absolute_error_ftzvsO3_compressed.append(torch.mean(decompressed_subtraction_ftzvsO3))
 
 
-plt.plot(np.asarray(timesteps), np.asarray(absolute_error), label="absolute error")
-plt.plot(np.asarray(timesteps), np.asarray(actual_error), label="actual error")
-plt.title("absolute error vs actual error of Shallow water equations")
-plt.xlabel("timestep")
-plt.ylabel("L infinity error")
+plt.plot(
+    np.asarray(absolute_error_fastmathvsO3),
+    np.asarray(timesteps),
+    label="fastmath vs O3 w/o compression",
+    color="brown",
+)
+plt.plot(np.asarray(absolute_error_ftzvsO3), np.asarray(timesteps), label="ftz vs O3 w/o compression", color="black")
+
+plt.plot(
+    np.asarray(absolute_error_fastmathvsO3_compressed),
+    np.asarray(timesteps),
+    label="fastmath vs O3 compressed",
+    color="cyan",
+)
+plt.plot(
+    np.asarray(absolute_error_ftzvsO3_compressed), np.asarray(timesteps), label="ftz vs O3 compressed", color="green"
+)
+
+plt.title("mean error of Shallow water equations")
+plt.xlabel("mean error")
+plt.ylabel("timestep")
 plt.legend()
-plt.savefig("L_infinity_error_graph_absolute_error.png")
-plt.close()
-
-plt.plot(np.asarray(timesteps), np.asarray(relative_error), label="relative error")
-plt.plot(np.asarray(timesteps), np.asarray(actual_relative_error), label="actual relative error")
-plt.title("relative error vs actual relative error of Shallow water equations")
-plt.xlabel("timestep")
-plt.ylabel("L infinity error")
-plt.legend()
-plt.savefig("L_infinity_error_graph_relative_error.png")
+plt.savefig("mean_error_graph_absolute_error.png")
 plt.close()
