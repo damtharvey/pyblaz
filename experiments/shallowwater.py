@@ -96,14 +96,14 @@ for timestep in range(500):
 
     timesteps.append(timestep)
 
-    absolute_error_fastmathvsO3.append(subtraction_fastmathvsO3.max())
-    absolute_error_ftzvsO3.append(subtraction_ftzvsO3.max())
+    absolute_error_fastmathvsO3.append(torch.mean(subtraction_fastmathvsO3))
+    absolute_error_ftzvsO3.append(torch.mean(subtraction_ftzvsO3))
 
     decompressed_subtraction_fastmathvsO3 = abs(compressor.decompress(compressed_b - compressed_a))
     decompressed_subtraction_ftzvsO3 = abs(compressor.decompress(compressed_c - compressed_a))
 
-    absolute_error_fastmathvsO3_compressed.append(decompressed_subtraction_fastmathvsO3.max())
-    absolute_error_ftzvsO3_compressed.append(decompressed_subtraction_ftzvsO3.max())
+    absolute_error_fastmathvsO3_compressed.append(torch.mean(decompressed_subtraction_fastmathvsO3))
+    absolute_error_ftzvsO3_compressed.append(torch.mean(decompressed_subtraction_ftzvsO3))
 
 
 plt.plot(
@@ -124,9 +124,9 @@ plt.plot(
     np.asarray(timesteps), np.asarray(absolute_error_ftzvsO3_compressed), label="ftz vs O3 compressed", color="green"
 )
 
-plt.title("max error of Shallow water equations")
-plt.xlabel("timestep")
-plt.ylabel("max error")
+plt.title("Mean error of Shallow water equations")
+plt.xlabel("Timesteps [0-20)")
+plt.ylabel("Mean error value")
 plt.legend()
-plt.savefig("max_error_graph_absolute_error.png")
+plt.savefig("mean_error_graph_absolute_error.png")
 plt.close()
