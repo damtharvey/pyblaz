@@ -12,11 +12,13 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import axes3d
 import seaborn as sns
 
+import random
+from scipy.stats import gaussian_kde
 
 coefficients = []
 
 timesteps = []
-for timestep in range(1):
+for timestep in range(10):
     txt_file0 = open("./data/ShallowWatersEquations/output/" + str(timestep) + ".txt", "r")
     file_content0 = txt_file0.read()
 
@@ -76,30 +78,29 @@ for timestep in range(1):
     coefficient_b = compressor.blockwise_transform(blocks_b)
 
     timesteps.append(timestep)
-    print(timestep)
+
     coefficients.append(coefficient_a[0][0])
-    # print(array)
-i = 0
-for plot in coefficients:
-    # i = i + 1
-    # print(i)
-    # sns.color_palette("hls", 500)
-    # plot_sns = sns.kdeplot(plot.numpy().flatten())
-    default_x_ticks = range(-400, 400)
-    plt.plot(default_x_ticks, plot.numpy().flatten())
-    plt.show()
-    # fig = plot_sns.get_figure()
 
-# fig.savefig("coefficient_plot.png")
-# fig = plt.figure()
-# ax = plt.axes(projection="3d")
-# zline = np.asarray(timesteps)
+fig = plt.figure()
 
-# xline = np.asarray(timesteps)
-# yline = np.linspace(0, 100, 100)
-# ax.plot3D(xline, yline, zline, "gray")  # Data for three-dimensional scattered points
-# zdata = 15 * np.random.random(100)
-# xdata = np.sin(zdata) + 0.1 * np.random.randn(100)
-# ydata = np.cos(zdata) + 0.1 * np.random.randn(100)
-# ax.scatter3D(xdata, ydata, zdata, c=zdata, cmap="Greens")
-# plt.show()
+
+ax = fig.add_subplot(projection="3d")
+
+ax.set_xlabel("X Axis")
+
+
+ax.set_ylabel("Y Axis")
+
+
+ax.set_zlabel("Z Axis")
+
+
+for plot in range(len(coefficients)):
+    colors = ["#" + "".join([random.choice("ABCDEF0123456789") for i in range(6)])]
+    # plt.hist(, density=True)
+    # plt.show()
+    density = gaussian_kde(sum(coefficients[plot].numpy().flatten()))
+
+    ax.plot3D(density(range(0, 16384)), coefficients[plot].numpy().flatten(), timesteps[plot], c=colors[0])
+
+plt.show()
