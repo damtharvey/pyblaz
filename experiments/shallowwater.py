@@ -96,37 +96,37 @@ for timestep in range(500):
 
     timesteps.append(timestep)
 
-    absolute_error_fastmathvsO3.append(torch.mean(subtraction_fastmathvsO3))
-    absolute_error_ftzvsO3.append(torch.mean(subtraction_ftzvsO3))
+    absolute_error_fastmathvsO3.append(torch.var(subtraction_fastmathvsO3))
+    absolute_error_ftzvsO3.append(torch.var(subtraction_ftzvsO3))
 
     decompressed_subtraction_fastmathvsO3 = abs(compressor.decompress(compressed_b - compressed_a))
     decompressed_subtraction_ftzvsO3 = abs(compressor.decompress(compressed_c - compressed_a))
 
-    absolute_error_fastmathvsO3_compressed.append(torch.mean(decompressed_subtraction_fastmathvsO3))
-    absolute_error_ftzvsO3_compressed.append(torch.mean(decompressed_subtraction_ftzvsO3))
+    absolute_error_fastmathvsO3_compressed.append(decompressed_subtraction_fastmathvsO3.max())
+    absolute_error_ftzvsO3_compressed.append(decompressed_subtraction_ftzvsO3.max())
 
 
 plt.plot(
-    np.asarray(absolute_error_fastmathvsO3),
     np.asarray(timesteps),
+    np.asarray(absolute_error_fastmathvsO3),
     label="fastmath vs O3 w/o compression",
     color="brown",
 )
-plt.plot(np.asarray(absolute_error_ftzvsO3), np.asarray(timesteps), label="ftz vs O3 w/o compression", color="black")
+plt.plot(np.asarray(timesteps), np.asarray(absolute_error_ftzvsO3), label="ftz vs O3 w/o compression", color="black")
 
-plt.plot(
-    np.asarray(absolute_error_fastmathvsO3_compressed),
-    np.asarray(timesteps),
-    label="fastmath vs O3 compressed",
-    color="cyan",
-)
-plt.plot(
-    np.asarray(absolute_error_ftzvsO3_compressed), np.asarray(timesteps), label="ftz vs O3 compressed", color="green"
-)
+# plt.plot(
+#     np.asarray(absolute_error_fastmathvsO3_compressed),
+#     np.asarray(timesteps),
+#     label="fastmath vs O3 compressed",
+#     color="cyan",
+# )
+# plt.plot(
+#     np.asarray(absolute_error_ftzvsO3_compressed), np.asarray(timesteps), label="ftz vs O3 compressed", color="green"
+# )
 
-plt.title("mean error of Shallow water equations")
-plt.xlabel("mean error")
-plt.ylabel("timestep")
+plt.title("variance error of Shallow water equations")
+plt.xlabel("timestep")
+plt.ylabel("var error")
 plt.legend()
-plt.savefig("mean_error_graph_absolute_error.png")
+plt.savefig("variance_error_graph_absolute_error.png")
 plt.close()
