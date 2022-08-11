@@ -38,6 +38,7 @@ class Compressor:
         transform: callable = transforms.cosine,
         dtype: torch.dtype = torch.float32,
         index_dtype: torch.dtype = torch.int8,
+        do_normalize: bool = False,
         device: torch.device = torch.device("cuda"),
         transform_tensor_directory: pathlib.Path = pathlib.Path("temp") / "transform_tensors",
     ):
@@ -47,6 +48,7 @@ class Compressor:
         self.n_dimensions = len(block_shape)
         self.dtype = dtype
         self.index_dtype = index_dtype
+        self.do_normalize = do_normalize
         self.device = device
         self.transform_tensor_directory = transform_tensor_directory
 
@@ -67,7 +69,10 @@ class Compressor:
         )
 
         blocked = self.block(tensor)
-        indicess, biggest_coefficients = self.bin(self.blockwise_transform(self.normalize(blocked)))
+        if self.do_normalize:
+            indicess, biggest_coefficients = self.bin(self.blockwise_transform(self.normalize(blocked)))
+        else:
+            indicess, biggest_coefficients = self.bin(self.blockwise_transform(blocked))
 
         return CompressedTensor(
             tensor.shape, blocked[(...,) + (0,) * self.n_dimensions], biggest_coefficients, indicess
@@ -81,12 +86,15 @@ class Compressor:
             f"Compressor dimensionality ({self.n_dimensions}) "
             f"must match tensor dimensionality ({compressed_tensor.n_dimensions})."
         )
-        unblocked = self.block_inverse(
-            self.normalize_inverse(
-                compressed_tensor.first_elements,
-                self.blockwise_transform(self.bin_inverse(compressed_tensor), inverse=True),
+        if self.do_normalize:
+            unblocked = self.block_inverse(
+                self.normalize_inverse(
+                    compressed_tensor.first_elements,
+                    self.blockwise_transform(self.bin_inverse(compressed_tensor), inverse=True),
+                )
             )
-        )
+        else:
+            unblocked = self.block_inverse(self.blockwise_transform(self.bin_inverse(compressed_tensor), inverse=True))
 
         return eval(f"unblocked[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
 

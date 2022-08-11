@@ -40,7 +40,7 @@ class CompressedTensor:
     @property
     def blocks_shape(self) -> tuple[int, ...]:
         return self.first_elements.shape
- 
+
     @property
     def block_shape(self) -> tuple[int, ...]:
         return torch.tensor(self.original_shape) / torch.tensor(self.blocks_shape)
@@ -111,6 +111,20 @@ class CompressedTensor:
         :returns: compressed tensor scaled by a scalar
         """
         return self * other
+
+    def dot(self, other) -> float:
+        return (
+            (
+                self.indicess.type(self.biggest_coefficients.dtype)
+                * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+                / INDICES_RADIUS[self.indicess.dtype]
+            )
+            * (
+                other.indicess.type(other.biggest_coefficients.dtype)
+                * other.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+                / INDICES_RADIUS[other.indicess.dtype]
+            )
+        ).sum()
 
 
 if __name__ == "__main__":
