@@ -129,6 +129,9 @@ class CompressedTensor:
         """
         return self.dot(self) ** 0.5
 
+    def cosine_similarity(self, other) -> float:
+        return self.dot(other) / (self.norm_2() * other.norm_2())
+
     def mean(self) -> float:
         """
         :returns: the arithmetic mean of the compressed tensor.
