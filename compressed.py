@@ -130,6 +130,9 @@ class CompressedTensor:
         return self.dot(self) ** 0.5
 
     def mean(self) -> float:
+        """
+        :returns: the arithmetic mean of the compressed tensor.
+        """
         return (
             (
                 self.indicess.type(self.biggest_coefficients.dtype)[(...,) + (0,) * self.n_dimensions]
@@ -140,7 +143,11 @@ class CompressedTensor:
             / torch.prod(torch.tensor(self.block_shape) ** 0.5)
         )
 
-    def variance(self) -> float:
+    def variance(self, sample: bool = False) -> float:
+        """
+        :param sample: whether to return the sample variance
+        :returns: the variance of the compressed tensor
+        """
         coefficientss = (
             self.indicess.type(self.biggest_coefficients.dtype)
             * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
@@ -150,7 +157,13 @@ class CompressedTensor:
         coefficientss[(...,) + (0,) * self.n_dimensions] -= coefficientss[
             (...,) + (0,) * self.n_dimensions
         ].sum() / torch.prod(torch.tensor(self.blocks_shape))
-        return (coefficientss**2).mean()
+
+        variance = (coefficientss**2).mean()
+
+        if sample:
+            return variance * (n_elements := torch.prod(torch.tensor(self.original_shape))) / (n_elements - 1)
+        else:
+            return variance
 
 
 if __name__ == "__main__":
