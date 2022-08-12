@@ -14,8 +14,7 @@ def _test():
 
 
 class CompressedBlock:
-    def __init__(self, first_element, biggest_coefficient, indices):
-        self.first_element = first_element
+    def __init__(self, biggest_coefficient, indices):
         self.biggest_coefficient = biggest_coefficient
         self.indices = indices
 
@@ -24,12 +23,10 @@ class CompressedTensor:
     def __init__(
         self,
         original_shape: tuple[int, ...],
-        first_elements: torch.Tensor,
         biggest_coefficients: torch.Tensor,
         indicess: torch.Tensor,
     ):
         self.original_shape = original_shape
-        self.first_elements = first_elements
         self.biggest_coefficients = biggest_coefficients
         self.indicess = indicess
 
@@ -39,20 +36,19 @@ class CompressedTensor:
 
     @property
     def blocks_shape(self) -> tuple[int, ...]:
-        return self.first_elements.shape
+        return self.biggest_coefficients.shape
 
     @property
     def block_shape(self) -> tuple[int, ...]:
-        return torch.tensor(self.original_shape) / torch.tensor(self.blocks_shape)
+        return self.indicess.shape[self.n_dimensions :]
 
     def __getitem__(self, item: tuple[int, ...] or int) -> CompressedBlock:
         """
         :returns: compressed block at the indices
         """
-        return CompressedBlock(self.first_elements[item], self.biggest_coefficients[item], self.indicess[item])
+        return CompressedBlock(self.biggest_coefficients[item], self.indicess[item])
 
     def __setitem__(self, key: tuple[int, ...] or int, value: CompressedBlock):
-        self.first_elements[key] = value.first_element
         self.biggest_coefficients[key] = value.biggest_coefficient
         self.indicess[key] = value.indices
 
@@ -60,7 +56,7 @@ class CompressedTensor:
         """
         :returns: negated compressed tensor.
         """
-        return CompressedTensor(self.original_shape, -self.first_elements, self.biggest_coefficients, -self.indicess)
+        return CompressedTensor(self.original_shape, self.biggest_coefficients, -self.indicess)
 
     def __add__(self, other):
         """
@@ -80,7 +76,6 @@ class CompressedTensor:
         )
         return CompressedTensor(
             self.original_shape,
-            self.first_elements + other.first_elements,
             proportion_of_radius,
             indices,
         )
@@ -98,7 +93,6 @@ class CompressedTensor:
         if isinstance(other, (float, int)) or (isinstance(other, torch.Tensor) and other.numel() == 1):
             product = CompressedTensor(
                 self.original_shape,
-                self.first_elements * other,
                 self.biggest_coefficients * abs(other),
                 self.indicess * (1 if other >= 0 else -1),
             )
@@ -113,6 +107,9 @@ class CompressedTensor:
         return self * other
 
     def dot(self, other) -> float:
+        """
+        :returns: the dot product of this tensor with another compressed tensor.
+        """
         return (
             (
                 self.indicess.type(self.biggest_coefficients.dtype)
@@ -125,6 +122,35 @@ class CompressedTensor:
                 / INDICES_RADIUS[other.indicess.dtype]
             )
         ).sum()
+
+    def norm_2(self) -> float:
+        """
+        :returns: the L_2 norm.
+        """
+        return self.dot(self) ** 0.5
+
+    def mean(self) -> float:
+        return (
+            (
+                self.indicess.type(self.biggest_coefficients.dtype)[(...,) + (0,) * self.n_dimensions]
+                * self.biggest_coefficients
+                / INDICES_RADIUS[self.indicess.dtype]
+            ).sum()
+            / torch.prod(torch.tensor(self.blocks_shape))
+            / torch.prod(torch.tensor(self.block_shape) ** 0.5)
+        )
+
+    def variance(self) -> float:
+        coefficientss = (
+            self.indicess.type(self.biggest_coefficients.dtype)
+            * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+            / INDICES_RADIUS[self.indicess.dtype]
+        )
+
+        coefficientss[(...,) + (0,) * self.n_dimensions] -= coefficientss[
+            (...,) + (0,) * self.n_dimensions
+        ].sum() / torch.prod(torch.tensor(self.blocks_shape))
+        return (coefficientss**2).mean()
 
 
 if __name__ == "__main__":

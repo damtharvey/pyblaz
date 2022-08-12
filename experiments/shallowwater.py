@@ -21,7 +21,7 @@ absolute_error_ftzvsO3_compressed = []
 dtype = torch.float64
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-compressor = Compressor(block_shape=(8, 8), dtype=dtype, device=device, do_normalize=False)
+compressor = Compressor(block_shape=(8, 8), dtype=dtype, device=device, do_differentiate=False)
 
 for timestep in tqdm.tqdm(range(500)):
     txt_file0 = open("./data/ShallowWatersEquations/output/" + str(timestep) + ".txt", "r")

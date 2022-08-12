@@ -46,14 +46,14 @@ def main():
         block_shape=(args.block_size,) * args.dimensions,
         dtype=dtype,
         index_dtype=index_dtypes[args.index_dtype],
-        do_normalize=True,
+        do_differentiate=True,
         device=device,
     )
     compressor_no_normalize = compression.Compressor(
         block_shape=(args.block_size,) * args.dimensions,
         dtype=dtype,
         index_dtype=index_dtypes[args.index_dtype],
-        do_normalize=False,
+        do_differentiate=False,
         device=device,
     )
 
