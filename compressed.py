@@ -118,7 +118,7 @@ class CompressedTensor:
             )
             * (
                 other.indicess.type(other.biggest_coefficients.dtype)
-                * other.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+                * other.biggest_coefficients[(...,) + (None,) * other.n_dimensions]
                 / INDICES_RADIUS[other.indicess.dtype]
             )
         ).sum()
