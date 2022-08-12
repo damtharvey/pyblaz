@@ -134,8 +134,6 @@ def main():
         results = torch.tensor(results, dtype=torch.float64).mean(0).round()
         to_write.append(",".join(str(int(number)) for number in results))
 
-        size <<= 1
-
     with open(
         results_save_path / f"bs{args.block_size}_{str(dtype)[6:]}.csv",
         "w",
