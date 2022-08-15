@@ -18,8 +18,9 @@ from scipy.stats import gaussian_kde
 coefficients = []
 
 timesteps = []
-for timestep in range(10):
-    txt_file0 = open("./data/ShallowWatersEquations/output/" + str(timestep) + ".txt", "r")
+time = [0, 100, 200, 300, 400, 499]
+for timestep in range(len(time)):
+    txt_file0 = open("./data/ShallowWatersEquations/output/" + str(time[timestep]) + ".txt", "r")
     file_content0 = txt_file0.read()
 
     content_list0 = file_content0.split("\n")
@@ -40,7 +41,7 @@ for timestep in range(10):
             temp1.append(float(j))
         final_list0.append(temp1)
 
-    txt_file1 = open("./data/ShallowWatersEquations/fastmath_output/" + str(timestep) + ".txt", "r")
+    txt_file1 = open("./data/ShallowWatersEquations/fastmath_output/" + str(time[timestep]) + ".txt", "r")
     file_content1 = txt_file1.read()
 
     content_list1 = file_content1.split("\n")
@@ -77,30 +78,30 @@ for timestep in range(10):
     # differences_b = compressor.normalize(blocks_b)
     coefficient_b = compressor.blockwise_transform(blocks_b)
 
-    timesteps.append(timestep)
-
-    coefficients.append(coefficient_a[0][0])
+    timesteps.append(time[timestep])
+    print(timestep)
+    coefficients.append(coefficient_b[0][0])
 
 fig = plt.figure()
 
 
 ax = fig.add_subplot(projection="3d")
 
-ax.set_xlabel("X Axis")
+ax.set_xlabel("Coefficient number")
 
 
-ax.set_ylabel("Y Axis")
+ax.set_ylabel("Coefficient Value")
 
 
-ax.set_zlabel("Z Axis")
+ax.set_zlabel("Timestep")
 
 
 for plot in range(len(coefficients)):
     colors = ["#" + "".join([random.choice("ABCDEF0123456789") for i in range(6)])]
     # plt.hist(, density=True)
     # plt.show()
-    density = gaussian_kde(sum(coefficients[plot].numpy().flatten()))
+    # density = gaussian_kde(sum(coefficients[plot].numpy().flatten()))
 
-    ax.plot3D(density(range(0, 16384)), coefficients[plot].numpy().flatten(), timesteps[plot], c=colors[0])
+    ax.plot3D(range(0, 16384), coefficients[plot].numpy().flatten(), timesteps[plot], c=colors[0])
 
 plt.show()
