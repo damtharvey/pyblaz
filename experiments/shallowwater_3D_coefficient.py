@@ -15,10 +15,22 @@ import seaborn as sns
 import random
 from scipy.stats import gaussian_kde
 
+
+def diagonalOrder(arr, n, m):
+
+    ordering_elements = [[] for i in range(n + m - 1)]
+
+    for i in range(m):
+        for j in range(n):
+            ordering_elements[i + j].append(arr[j][i])
+
+    return ordering_elements
+
+
 coefficients = []
 
 timesteps = []
-time = [0, 100, 200, 300, 400, 499]
+time = [0, 99, 199, 299, 399, 499]
 for timestep in range(len(time)):
     txt_file0 = open("./data/ShallowWatersEquations/output/" + str(time[timestep]) + ".txt", "r")
     file_content0 = txt_file0.read()
@@ -77,31 +89,37 @@ for timestep in range(len(time)):
     blocks_b = compressor.block(b)
     # differences_b = compressor.normalize(blocks_b)
     coefficient_b = compressor.blockwise_transform(blocks_b)
-
+    ordered_elements = diagonalOrder(np.array(coefficient_b[0][0]), 128, 128)
     timesteps.append(time[timestep])
     print(timestep)
-    coefficients.append(coefficient_b[0][0])
+    coefficients.append(ordered_elements)
 
 fig = plt.figure()
 
 
 ax = fig.add_subplot(projection="3d")
 
-ax.set_xlabel("Coefficient number")
+ax.set_xlabel("Coefficient index")
 
 
 ax.set_ylabel("Coefficient Value")
 
 
 ax.set_zlabel("Timestep")
-
+# colors = ["red", "green", "blue", "yellow", "cyan", "magenta"]
+colors = plt.cm.rainbow(np.linspace(0, 1, 20))
 
 for plot in range(len(coefficients)):
-    colors = ["#" + "".join([random.choice("ABCDEF0123456789") for i in range(6)])]
+
     # plt.hist(, density=True)
     # plt.show()
     # density = gaussian_kde(sum(coefficients[plot].numpy().flatten()))
+    zline = timesteps[plot]
+    yline = list(np.concatenate(coefficients[plot]).flat)
 
-    ax.plot3D(range(0, 16384), coefficients[plot].numpy().flatten(), timesteps[plot], c=colors[0])
+    print(yline)
+
+    # ax.plot3D(xline, yline, zline, "gray")
+    ax.plot3D(range(0, 16384), yline, timesteps[plot], c=colors[plot])
 
 plt.show()
