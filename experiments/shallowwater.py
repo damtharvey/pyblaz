@@ -1,22 +1,22 @@
-from cProfile import label
-
 import matplotlib.colors
-
-from compression import Compressor
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy import linalg as LA
 
 import torch
 import tqdm
 
+from compression import Compressor
+
 timesteps = []
 
-absolute_error_fastmathvsO3 = []
-absolute_error_ftzvsO3 = []
+fastmath_vs_o3_norm2 = []
+ftz_vs_o3_norm2 = []
 
-absolute_error_fastmathvsO3_compressed = []
-absolute_error_ftzvsO3_compressed = []
+fastmath_vs_o3_with_codec_norm2 = []
+ftz_vs_o3_with_codec_norm2 = []
+
+fastmath_vs_o3_compressed_norm2 = []
+ftz_vs_o3_compressed_norm2 = []
 
 dtype = torch.float64
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -95,77 +95,80 @@ for timestep in tqdm.tqdm(range(500)):
     compressed_b = compressor.compress(b)
     compressed_c = compressor.compress(c)
 
-    subtraction_fastmathvsO3 = abs(b - a)
-    subtraction_ftzvsO3 = abs(c - a)
+    decompressed_a = compressor.decompress(compressed_a)
+    decompressed_b = compressor.decompress(compressed_b)
+    decompressed_c = compressor.decompress(compressed_c)
 
     timesteps.append(timestep)
 
-    absolute_error_fastmathvsO3.append(torch.mean(subtraction_fastmathvsO3).item())
-    absolute_error_ftzvsO3.append(torch.mean(subtraction_ftzvsO3).item())
+    fastmath_vs_o3_norm2.append((b - a).norm(2).item())
+    ftz_vs_o3_norm2.append((c - a).norm(2).item())
 
-    decompressed_subtraction_fastmathvsO3 = abs(compressor.decompress(compressed_b - compressed_a))
-    decompressed_subtraction_ftzvsO3 = abs(compressor.decompress(compressed_c - compressed_a))
+    # fastmath_vs_o3_with_codec_norm2.append((decompressed_b - decompressed_a).norm(2).item())
+    # ftz_vs_o3_with_codec_norm2.append((decompressed_c - decompressed_a).norm(2).item())
 
-    absolute_error_fastmathvsO3_compressed.append(torch.mean(decompressed_subtraction_fastmathvsO3).item())
-    absolute_error_ftzvsO3_compressed.append(torch.mean(decompressed_subtraction_ftzvsO3).item())
+    fastmath_vs_o3_compressed_norm2.append((compressed_b - compressed_a).norm_2().item())
+    ftz_vs_o3_compressed_norm2.append((compressed_c - compressed_a).norm_2().item())
 
 tab10 = list(matplotlib.colors.TABLEAU_COLORS.keys())
 
-plt.plot(
-    np.asarray(timesteps),
-    np.asarray(absolute_error_fastmathvsO3_compressed),
-    label="fastmath vs O3 with (de)compression",
-    color=tab10[1],
-    linewidth=1,
-)
-plt.plot(
-    np.asarray(timesteps),
-    np.asarray(absolute_error_ftzvsO3_compressed),
-    label="ftz vs O3 with (de)compression",
-    color=tab10[3],
-    linewidth=1,
-)
 
-plt.plot(
-    np.asarray(timesteps), np.asarray(absolute_error_fastmathvsO3), label="fastmath vs O3", color=tab10[0], linewidth=1
-)
+def draw_curves():
+    # plt.plot(
+    #     np.asarray(timesteps),
+    #     np.asarray(fastmath_vs_o3_with_codec_norm2),
+    #     label="fastmath vs O3 with (de)compression",
+    #     # color=tab10[1],
+    #     linewidth=1,
+    # )
+    # plt.plot(
+    #     np.asarray(timesteps),
+    #     np.asarray(ftz_vs_o3_with_codec_norm2),
+    #     label="ftz vs O3 with (de)compression",
+    #     # color=tab10[3],
+    #     linewidth=1,
+    # )
 
-plt.plot(np.asarray(timesteps), np.asarray(absolute_error_ftzvsO3), label="ftz vs O3", color=tab10[2], linewidth=1)
+    plt.plot(np.asarray(timesteps), np.asarray(fastmath_vs_o3_norm2), label="fastmath vs O3",
+             # color=tab10[0]
+             )
 
-plt.title("Mean error of Shallow water equations")
-plt.xlabel("Timestep")
-plt.ylabel("Mean error")
+    plt.plot(
+        np.asarray(timesteps),
+        np.asarray(fastmath_vs_o3_norm2),
+        label="fastmath vs O3, compressed L2",
+        # color=tab10[7],
+        linewidth=1, linestyle=(0, (5, 5))
+    )
+
+    plt.plot(np.asarray(timesteps), np.asarray(ftz_vs_o3_norm2), label="ftz vs O3",
+             # color=tab10[2]
+             )
+
+    plt.plot(
+        np.asarray(timesteps),
+        np.asarray(ftz_vs_o3_compressed_norm2),
+        label="ftz vs O3, compressed L2",
+        # color=tab10[5],
+        linewidth=1, linestyle=(0, (5, 5))
+    )
+
+
+draw_curves()
+plt.title("Magnitude of error in shallow water simulation")
+plt.xlabel("time step")
+plt.ylabel("magnitude of error")
 plt.legend()
-plt.savefig("results/ShallowWaters/no_normalize_ftz_fastmath_vs_o3_mean_error.pdf")
+plt.savefig("results/ShallowWaters/ftz_fastmath_vs_o3_magnitude.pdf")
 
 
 plt.clf()
-horizontal_values = [str(x) for x in np.asarray(timesteps)]
-plt.plot(
-    horizontal_values,
-    np.asarray(absolute_error_fastmathvsO3_compressed),
-    label="fastmath vs O3 with (de)compression",
-    color=tab10[1],
-    linewidth=1,
-)
-plt.plot(
-    horizontal_values,
-    np.asarray(absolute_error_ftzvsO3_compressed),
-    label="ftz vs O3 with (de)compression",
-    color=tab10[3],
-    linewidth=1,
-)
-
-plt.plot(
-    horizontal_values, np.asarray(absolute_error_fastmathvsO3), label="fastmath vs O3", color=tab10[0], linewidth=1
-)
-
-plt.plot(horizontal_values, np.asarray(absolute_error_ftzvsO3), label="ftz vs O3", color=tab10[2], linewidth=1)
-
-plt.title("Mean error of Shallow water equations")
-plt.xlabel("Timestep")
-plt.ylabel("Mean error")
+draw_curves()
+plt.title("(Zoomed) Magnitude of error in shallow water simulation")
+plt.xlabel("time step")
+plt.ylabel("magnitude of error")
 plt.legend()
-plt.xlim((0, 20))
+plt.xticks(range(20), [str(x) for x in range(20)])
+plt.xlim((0, 19))
 
-plt.savefig("results/ShallowWaters/no_normalize_ftz_fastmath_vs_o3_mean_error_xlim_0_20.pdf")
+plt.savefig("results/ShallowWaters/ftz_fastmath_vs_o3_magnitude_xlim_0_19.pdf")
