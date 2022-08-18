@@ -60,23 +60,57 @@ class CompressedTensor:
 
     def __add__(self, other):
         """
-        :returns: sum of two compressed tensors
+        :returns: sum of two compressed tensors or of a compressed tensor and a scalar
         """
+        if isinstance(other, CompressedTensor):
+            assert self.original_shape == other.original_shape and self.block_shape == other.block_shape, (
+                f"Original shapes and block shapes must match. "
+                f"Got original shapes {self.original_shape} and {other.original_shape}, "
+                f"block shapes {self.block_shape} and {other.block_shape}."
+            )
+            return self.add_tensor(other)
+        elif isinstance(other, (float, int)) or (isinstance(other, torch.Tensor) and other.numel() == 1):
+            return self.add_scalar(other)
+        else:
+            raise TypeError(f"Add not defined between {type(self)} and {type(other)}.")
+
+    def add_tensor(self, other):
         indices = (
             self.indicess * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
             + other.indicess * other.biggest_coefficients[(...,) + (None,) * other.n_dimensions]
         )
-
         proportion_of_radius = (
             indices.norm(torch.inf, tuple(range(self.n_dimensions, 2 * self.n_dimensions)))
             / INDICES_RADIUS[self.indicess.dtype]
         )
         indices = torch.nan_to_num(
-            (indices / proportion_of_radius[(...,) + (None,) * other.n_dimensions]).round().type(self.indicess.dtype)
+            (indices / proportion_of_radius[(...,) + (None,) * self.n_dimensions]).round().type(self.indicess.dtype)
         )
         return CompressedTensor(
             self.original_shape,
             proportion_of_radius,
+            indices,
+        )
+
+    def add_scalar(self, other):
+        coefficientss = (
+            self.indicess.type(self.biggest_coefficients.dtype)
+            * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+            / INDICES_RADIUS[self.indicess.dtype]
+        )
+        coefficientss[(...,) + (0,) * self.n_dimensions] += other * torch.prod(torch.tensor(self.block_shape) ** 0.5)
+        biggest_coefficients = coefficientss.norm(torch.inf, tuple(range(self.n_dimensions, 2 * self.n_dimensions)))
+        indices = (
+            (
+                coefficientss
+                * (INDICES_RADIUS[self.indicess.dtype] / biggest_coefficients[(...,) + (None,) * self.n_dimensions])
+            )
+            .round()
+            .type(self.indicess.dtype)
+        )
+        return CompressedTensor(
+            self.original_shape,
+            biggest_coefficients,
             indices,
         )
 

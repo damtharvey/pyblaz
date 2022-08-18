@@ -97,7 +97,7 @@ def sweep_settings(colors, ratio=False):
                             label=f"BS{block_size}, {n_dimensions}D",
                         )
             if ratio:
-                plt.title(f"Compression ratio, float{float_size}, int{int_size}")
+                plt.title(f"Compression ratio using float{float_size} and int{int_size}")
                 plt.xlabel("array size")
                 plt.xticks(rotation=-30)
                 plt.ylabel("uncompressed size / compressed size")
@@ -106,10 +106,10 @@ def sweep_settings(colors, ratio=False):
                 plt.tight_layout()
                 plt.savefig(save_path / f"ratio_float{float_size}_int{int_size}.pdf")
             else:
-                plt.title(f"Compressed size, float{float_size}, int{int_size}")
+                plt.title(f"Compressed-array memory usage using float{float_size} and int{int_size}")
                 plt.xlabel("array size")
                 plt.xticks(rotation=-30)
-                plt.ylabel("compressed memory usage (bits)")
+                plt.ylabel("compressed-array memory usage (bits)")
                 plt.yscale("log")
                 plt.ylim((10**2.5, 10**10))
                 plt.legend()
