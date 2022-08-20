@@ -129,34 +129,34 @@ def draw_curves():
     #     linewidth=1,
     # )
 
-    plt.plot(np.asarray(timesteps), np.asarray(fastmath_vs_o3_norm2), label="fastmath vs O3",
+    plt.plot(np.asarray(timesteps), np.asarray(fastmath_vs_o3_norm2), label="FC1 vs FC0",
              # color=tab10[0]
              )
 
     plt.plot(
         np.asarray(timesteps),
         np.asarray(fastmath_vs_o3_norm2),
-        label="fastmath vs O3, compressed L2",
+        label="FC1 vs FC0, compressed L2",
         # color=tab10[7],
-        linewidth=1, linestyle=(0, (5, 5))
+        linestyle=(0, (5, 5))
     )
 
-    plt.plot(np.asarray(timesteps), np.asarray(ftz_vs_o3_norm2), label="ftz vs O3",
+    plt.plot(np.asarray(timesteps), np.asarray(ftz_vs_o3_norm2), label="FC2 vs FC0",
              # color=tab10[2]
              )
 
     plt.plot(
         np.asarray(timesteps),
         np.asarray(ftz_vs_o3_compressed_norm2),
-        label="ftz vs O3, compressed L2",
+        label="FC2 vs FC0, compressed L2",
         # color=tab10[5],
-        linewidth=1, linestyle=(0, (5, 5))
+        linestyle=(0, (5, 5))
     )
 
 
 draw_curves()
 plt.title("Magnitude of error in shallow water simulation")
-plt.xlabel("time step")
+plt.xlabel("time-step")
 plt.ylabel("magnitude of error")
 plt.legend()
 plt.savefig("results/ShallowWaters/ftz_fastmath_vs_o3_magnitude.pdf")
@@ -165,7 +165,7 @@ plt.savefig("results/ShallowWaters/ftz_fastmath_vs_o3_magnitude.pdf")
 plt.clf()
 draw_curves()
 plt.title("(Zoomed) Magnitude of error in shallow water simulation")
-plt.xlabel("time step")
+plt.xlabel("time-step")
 plt.ylabel("magnitude of error")
 plt.legend()
 plt.xticks(range(20), [str(x) for x in range(20)])
