@@ -3,7 +3,7 @@ from compression import Compressor
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy import linalg as LA
-
+import os
 import torch
 
 timesteps = []
@@ -36,7 +36,7 @@ for timestep in range(500):
             temp1.append(float(j))
         final_list0.append(temp1)
 
-    txt_file1 = open("./data/ShallowWatersEquations/fastmath_output/" + str(timestep) + ".txt", "r")
+    txt_file1 = open("./data/ShallowWatersEquations/output/" + str(timestep) + ".txt", "r")
     file_content1 = txt_file1.read()
 
     content_list1 = file_content1.split("\n")
