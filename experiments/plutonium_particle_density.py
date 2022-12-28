@@ -13,25 +13,27 @@ def main():
     parser.add_argument("--input-shape", type=str, default="40-40-66")
     args = parser.parse_args()
 
+    print("\nneutron density")
+    print_density_temporal_difference(args, "n")
+    print("\nproton density")
+    print_density_temporal_difference(args, "p")
+
+
+def print_density_temporal_difference(args, particle_name: str):
     input_shape = tuple(int(size) for size in args.input_shape.split("-"))
     dtype = torch.float32
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    paths = tuple((pathlib.Path(args.directory) / particle_name).glob("*.raw"))
 
-    paths = tuple((pathlib.Path(args.directory) / "n").glob("*.raw"))
     densities = torch.empty(len(paths), *input_shape)
     for index, path in enumerate(paths):
         densities[index] = torch.from_numpy(np.fromfile(path, dtype=np.uint8)).reshape(input_shape)
-
     densities = densities.type(dtype).to(device)
-
     print("uncompressed")
     print([magnitude.item() for magnitude in list((densities[1:] - densities[:-1]).norm(2, (1, 2, 3)))])
-
     compressor = compression.Compressor(block_shape=(8, 8, 8), dtype=dtype, index_dtype=torch.int16, device=device)
-
     print("compressed")
     compressed_per_time_step = [compressor.compress(densities[time_step]) for time_step in range(densities.shape[0])]
-
     print(
         list(
             (leading - lagging).norm_2().item()
