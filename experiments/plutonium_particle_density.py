@@ -47,7 +47,7 @@ def print_density_temporal_difference(args, particle_name: str):
 
     plt.xlabel("timestep")
     plt.ylabel("L2 norm value")
-    plt.title("L2 norm difference for each timestep for" + particle_name + "for Pu atom")
+    plt.title("L2 norm difference for each timestep for " + particle_name + " for Pu atom")
     plt.xticks(
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
         [
