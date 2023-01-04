@@ -151,7 +151,6 @@ class Compressor:
         Section II.d
 
         Transform the blocked tensor blockwise according to self.block_shape.
-        Non-hypercubic block shapes have not been tested.
 
         :param blocked_tensor:
         :param n_coefficients:
