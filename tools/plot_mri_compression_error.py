@@ -23,7 +23,7 @@ def main():
     index_type_markers = ("s", "D")
     index_type_offsets = (-0.05, 0.05)
     block_sizes = (4, 8, 16)
-    block_size_offsets = (-0.3, 0, 0.3)
+    block_size_offsets = (-0.2, 0, 0.2)
     float_types = ("float16", "bfloat16", "float32", "float64")
     horizontal_values = np.array(range(len(float_types)))
 
@@ -47,15 +47,24 @@ def main():
                     else:
                         error_means.append(selected_absolute_error.mean())
                         no_nans = selected_absolute_error.dropna()
-                        plt.scatter([center_position + block_type_offset + index_type_offset] * len(no_nans), no_nans,s=8, color=color, alpha=0.05)
+                        plt.scatter(
+                            [center_position + block_type_offset + index_type_offset] * len(no_nans),
+                            no_nans,
+                            s=8,
+                            color=color,
+                            alpha=0.05,
+                        )
 
-                plt.scatter(horizontal_values + block_type_offset + index_type_offset, error_means, marker=marker, color=color)
-
+                plt.scatter(
+                    horizontal_values + block_type_offset + index_type_offset, error_means, marker=marker, color=color
+                )
 
         plt.xticks(horizontal_values, float_types)
         legend = []
         for index_type, marker in zip(index_types, index_type_markers):
-            legend.append(Line2D([0], [0], marker=marker, color="black", label=f"index type {index_type}"))
+            legend.append(
+                Line2D([0], [0], marker=marker, linestyle="", color="black", label=f"index type {index_type}")
+            )
         for block_size, color in zip(block_sizes, colors):
             legend.append(Patch(facecolor=color, label=f"block size {block_size}"))
         plt.legend(handles=legend)
@@ -64,6 +73,7 @@ def main():
         plt.xlabel("floating-point type")
         plt.tight_layout()
         plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
+        plt.savefig(save_path / f"mri_flair_{metric}_error.png", dpi=600)
         # plt.show()
 
 
