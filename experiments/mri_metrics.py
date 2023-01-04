@@ -26,16 +26,18 @@ def main():
     results_path = pathlib.Path(args.results) / "mri"
     results_path.mkdir(parents=True, exist_ok=True)
 
-    to_write = ["float_type,index_type,block_size,metric,error"]
-
+    to_write = ["float_type,index_type,block_shape,metric,error"]
     for float_type in (torch.bfloat16, torch.float16, torch.float32, torch.float64):
         for index_type in (torch.int8, torch.int16):
-            for block_size in (4, 8, 16):
-                compressor = compression.Compressor((block_size,) * 3, dtype=float_type, index_dtype=index_type)
+            for block_shape in (4, 4, 4), (8, 8, 8), (16, 16, 16), (4, 8, 8), (4, 16, 16), (8, 16, 16):
+                compressor = compression.Compressor(block_shape, dtype=float_type, index_dtype=index_type)
+                pretty_print_float_type = str(float_type)[6:]
+                pretty_print_index_type = str(index_type)[6:]
+                pretty_print_block_shape = "×".join(str(size) for size in block_shape)
 
                 for example_path in tqdm.tqdm(
                     tuple(data_path.glob("*")),
-                    desc=f"{str(float_type)[6:]} {str(index_type)[6:]} block size {block_size}.",
+                    desc=f"{str(float_type)[6:]} {str(index_type)[6:]} {pretty_print_block_shape}",
                 ):
                     # According to the dataset README, some examples are missing channels.
                     # FLAIR is available in all examples.
@@ -43,19 +45,24 @@ def main():
                     compressed_flair = compressor.compress(flair)
 
                     to_write.append(
-                        f"{str(float_type)[6:]},{str(index_type)[6:]},{block_size},mean,"
+                        f"{pretty_print_float_type},"
+                        f"{pretty_print_index_type},"
+                        f"{pretty_print_block_shape},mean,"
                         f"{flair.mean() - compressed_flair.mean()}"
                     )
                     to_write.append(
-                        f"{str(float_type)[6:]},{str(index_type)[6:]},{block_size},variance,"
+                        f"{pretty_print_float_type},"
+                        f"{pretty_print_index_type},"
+                        f"{pretty_print_block_shape},variance,"
                         f"{flair.var(unbiased=False) - compressed_flair.variance()}"
                     )
                     to_write.append(
-                        f"{str(float_type)[6:]},{str(index_type)[6:]},{block_size},norm_2,"
+                        f"{pretty_print_float_type},"
+                        f"{pretty_print_index_type},"
+                        f"{pretty_print_block_shape},norm_2,"
                         f"{flair.norm(2) - compressed_flair.norm_2()}"
                     )
-
-    with open(results_path / f"mri_metrics.csv", "w") as file:
+    with open(results_path / "mri_metrics.csv", "w") as file:
         file.write("\n".join(to_write))
 
 
