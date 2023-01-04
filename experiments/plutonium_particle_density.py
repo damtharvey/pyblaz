@@ -34,7 +34,7 @@ def print_density_temporal_difference(args, particle_name: str):
     print("uncompressed")
     uncompressed_result = [magnitude.item() for magnitude in list((densities[1:] - densities[:-1]).norm(2, (1, 2, 3)))]
     print(uncompressed_result)
-    compressor = compression.Compressor(block_shape=(8, 8, 8), dtype=dtype, index_dtype=torch.int8, device=device)
+    compressor = compression.Compressor(block_shape=(8, 8, 8), dtype=dtype, index_dtype=torch.int16, device=device)
     print("compressed")
     timesteps = [timestep for timestep in range(len(densities) - 1)]
     compressed_per_time_step = [compressor.compress(densities[time_step]) for time_step in range(densities.shape[0])]
@@ -91,7 +91,8 @@ def print_density_temporal_difference(args, particle_name: str):
 
     plt.plot(np.asarray(timesteps), np.asarray(compressed_result), label="(de)compressed data")
     plt.legend()
-    plt.savefig("L2norm_" + particle_name + ".png")
+    # plt.savefig("L2norm_" + particle_name + ".png")
+    plt.show()
     plt.close()
 
 
