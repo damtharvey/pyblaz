@@ -23,8 +23,8 @@ def main():
     index_type_markers = ("s", "D")
     index_type_offsets = (-0.05, 0.05)
     block_sizes = (4, 8, 16)
-    block_size_offsets = (-0.2, 0, 0.2)
-    float_types = ("float16", "bfloat16", "float32", "float64")  # lot of NANs in float16
+    block_size_offsets = (-0.3, 0, 0.3)
+    float_types = ("float16", "bfloat16", "float32", "float64")
     horizontal_values = np.array(range(len(float_types)))
 
     with open(results_path / f"mri_metrics.csv") as file:
@@ -35,29 +35,23 @@ def main():
         for index_type, marker, index_type_offset in zip(index_types, index_type_markers, index_type_offsets):
             for block_size, color, block_type_offset in zip(block_sizes, colors, block_size_offsets):
                 error_means = []
-                error_standard_deviations = []
-                for float_type in float_types:
-                    selected_error = dataframe[
+                for center_position, float_type in enumerate(float_types):
+                    selected_absolute_error = dataframe[
                         (dataframe.index_type == index_type)
                         & (dataframe.block_size == block_size)
                         & (dataframe.float_type == float_type)
                         & (dataframe.metric == metric)
-                    ].error
-                    if selected_error.hasnans:
+                    ].error.abs()
+                    if selected_absolute_error.hasnans:
                         error_means.append(float("nan"))
-                        error_standard_deviations.append(float("nan"))
                     else:
-                        error_means.append(selected_error.abs().mean())
-                        error_standard_deviations.append(selected_error.std())
+                        error_means.append(selected_absolute_error.mean())
+                        no_nans = selected_absolute_error.dropna()
+                        plt.scatter([center_position + block_type_offset + index_type_offset] * len(no_nans), no_nans,s=8, color=color, alpha=0.05)
 
-                plt.errorbar(
-                    horizontal_values + block_type_offset + index_type_offset,
-                    error_means,
-                    linestyle="",
-                    yerr=error_standard_deviations,
-                    marker=marker,
-                    color=color,
-                )
+                plt.scatter(horizontal_values + block_type_offset + index_type_offset, error_means, marker=marker, color=color)
+
+
         plt.xticks(horizontal_values, float_types)
         legend = []
         for index_type, marker in zip(index_types, index_type_markers):
@@ -68,6 +62,7 @@ def main():
         plt.title(f"Error between compressed and uncompressed {metric} of FLAIR")
         plt.ylabel("absolute error")
         plt.xlabel("floating-point type")
+        plt.tight_layout()
         plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
         # plt.show()
 
