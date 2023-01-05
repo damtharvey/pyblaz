@@ -90,14 +90,6 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
                         alpha=0.05,
                     )
 
-                # compression_ratios = [
-                #     uncompressed_image_size
-                #     / plot_space.compressed_size(
-                #         mean_image_shape, block_shape, 1, float_types[float_type], index_types[index_type]
-                #     )
-                #     for float_type in float_types
-                # ]
-
                 ratio_axis.bar(
                     horizontal_values + block_shape_offset + index_type_offset,
                     mean_compression_ratios,

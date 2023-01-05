@@ -144,27 +144,30 @@ class CompressedTensor:
         """
         :returns: the dot product of this tensor with another compressed tensor.
         """
-        self_biggest_coefficients_scaled = (
-            self.biggest_coefficients[(...,) + (None,) * self.n_dimensions] / INDICES_RADIUS[self.indicess.dtype]
-        )
-        other_biggest_coefficients_scaled = (
-            other.biggest_coefficients[(...,) + (None,) * other.n_dimensions] / INDICES_RADIUS[other.indicess.dtype]
-        )
         return (
-            (self.indicess.type(self.biggest_coefficients.dtype) * self_biggest_coefficients_scaled)
-            * (other.indicess.type(other.biggest_coefficients.dtype) * other_biggest_coefficients_scaled)
+            (
+                (self.biggest_coefficients[(...,) + (None,) * self.n_dimensions] / INDICES_RADIUS[self.indicess.dtype])
+                * self.indicess.type(self.biggest_coefficients.dtype)
+            )
+            * (
+                (
+                    other.biggest_coefficients[(...,) + (None,) * other.n_dimensions]
+                    / INDICES_RADIUS[other.indicess.dtype]
+                )
+                * other.indicess.type(other.biggest_coefficients.dtype)
+            )
         ).sum()
 
     def norm_2(self) -> float:
         """
         :returns: the L_2 norm.
         """
-        # TODO: Compare with self.dot(self) ** 0.5
-
-        self_biggest_coefficients_scaled = (
-            self.biggest_coefficients[(...,) + (None,) * self.n_dimensions] / INDICES_RADIUS[self.indicess.dtype]
-        )
-        return (self.indicess.type(self.biggest_coefficients.dtype) * self_biggest_coefficients_scaled).norm(2)
+        # Faster than self.dot(self) ** 0.5
+        return (
+            self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+            / INDICES_RADIUS[self.indicess.dtype]
+            * self.indicess.type(self.biggest_coefficients.dtype)
+        ).norm(2)
 
     def cosine_similarity(self, other) -> float:
         return self.dot(other) / (self.norm_2() * other.norm_2())
@@ -173,11 +176,11 @@ class CompressedTensor:
         """
         :returns: the arithmetic mean of the compressed tensor.
         """
-        biggest_coefficients_scaled = self.biggest_coefficients / INDICES_RADIUS[self.indicess.dtype]
         return (
             (
-                self.indicess.type(self.biggest_coefficients.dtype)[(...,) + (0,) * self.n_dimensions]
-                * biggest_coefficients_scaled
+                self.biggest_coefficients
+                / INDICES_RADIUS[self.indicess.dtype]
+                * self.indicess.type(self.biggest_coefficients.dtype)[(...,) + (0,) * self.n_dimensions]
             ).sum()
             / torch.prod(torch.tensor(self.blocks_shape))
             / torch.prod(torch.tensor(self.block_shape) ** 0.5)
@@ -188,10 +191,11 @@ class CompressedTensor:
         :param sample: whether to return the sample variance
         :returns: the variance of the compressed tensor
         """
-        biggest_coefficients_scaled = (
-            self.biggest_coefficients[(...,) + (None,) * self.n_dimensions] / INDICES_RADIUS[self.indicess.dtype]
+        coefficientss = (
+            self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+            / INDICES_RADIUS[self.indicess.dtype]
+            * self.indicess.type(self.biggest_coefficients.dtype)
         )
-        coefficientss = self.indicess.type(self.biggest_coefficients.dtype) * biggest_coefficients_scaled
 
         coefficientss[(...,) + (0,) * self.n_dimensions] -= coefficientss[
             (...,) + (0,) * self.n_dimensions
