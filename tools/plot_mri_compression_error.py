@@ -8,6 +8,8 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 import numpy as np
 
+import plot_space
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -18,23 +20,39 @@ def main():
     save_path = results_path / "figures"
     save_path.mkdir(parents=True, exist_ok=True)
 
-    flair_mean = 0.087
-
     colors = list(matplotlib.colors.TABLEAU_COLORS.keys())
-    index_types = ("int8", "int16")
-    index_type_markers = ("s", "D")
-    index_type_offsets = (-0.038, 0.038)
     block_shapes = (4, 4, 4), (8, 8, 8), (16, 16, 16), (4, 8, 8), (4, 16, 16), (8, 16, 16)
+    index_types = {"int8": 8, "int16": 16}
+    index_type_markers = ("s", "D")
+    plot_errors(block_shapes, colors, index_type_markers, index_types, results_path, save_path)
+    plot_legend(block_shapes, colors, index_type_markers, index_types, save_path)
+
+
+def plot_errors(block_shapes, colors, index_type_markers, index_types, results_path, save_path):
+    index_type_offsets = (-0.038, 0.038)
     block_shape_offsets = ((range_shapes := np.arange(len(block_shapes))) - range_shapes.mean()) * 0.16
-    float_types = ("float16", "bfloat16", "float32", "float64")
+    float_types = {"float16": 16, "bfloat16": 16, "float32": 32, "float64": 64}
     horizontal_values = np.arange(len(float_types))
+    flair_mean = 0.087
+    mean_image_shape = (36, 256, 256)
+    uncompressed_image_size = plot_space.uncompressed_size(mean_image_shape)
     with open(results_path / "mri_metrics.csv") as file:
         dataframe = pd.read_csv(file)
     for metric in ("mean", "variance", "norm_2"):
         plt.clf()
+
+        figure = plt.figure(figsize=(8, 3.5))
+        absolute_axis = figure.add_subplot(111)
+        absolute_axis.set_xticks(horizontal_values, float_types)
+        relative_axis = absolute_axis.secondary_yaxis(
+            -0.14, functions=(lambda x: x / flair_mean, lambda x: x * flair_mean)
+        )
+        relative_axis.set_ylabel("relative error")
+
+        ratio_axis = absolute_axis.twinx()
+        ratio_axis.set_ylabel("compression ratio")
+
         max_error_without_nan = 0
-        fig = plt.figure(figsize=(8, 4))
-        ax1 = fig.add_subplot(111)
 
         for index_type, marker, index_type_offset in zip(index_types, index_type_markers, index_type_offsets):
             for block_shape, color, block_shape_offset in zip(block_shapes, colors, block_shape_offsets):
@@ -51,7 +69,7 @@ def main():
                     else:
                         max_error_without_nan = max(max_error_without_nan, selected_absolute_error.max())
                         error_means.append(selected_absolute_error.mean())
-                    ax1.scatter(
+                    absolute_axis.scatter(
                         [center_position + block_shape_offset + index_type_offset] * len(selected_absolute_error),
                         selected_absolute_error,
                         s=4,
@@ -59,32 +77,57 @@ def main():
                         alpha=0.05,
                     )
 
-                ax1.scatter(
+                compression_ratios = [
+                    uncompressed_image_size
+                    / plot_space.compressed_size(
+                        mean_image_shape, block_shape, 1, float_types[float_type], index_types[index_type]
+                    )
+                    for float_type in float_types
+                ]
+                ratio_axis.bar(
+                    horizontal_values + block_shape_offset + index_type_offset,
+                    compression_ratios,
+                    color="black",
+                    alpha=0.1,
+                    width=0.02
+                )
+                ratio_axis.scatter(
+                    horizontal_values + block_shape_offset + index_type_offset,
+                    compression_ratios,
+                    marker="_",
+                    s=50,
+                    color="black",
+                )
+
+                absolute_axis.scatter(
                     horizontal_values + block_shape_offset + index_type_offset, error_means, marker=marker, color=color
                 )
 
-        ax1.set_xticks(horizontal_values, float_types)
-        legend = []
-        for index_type, marker in zip(index_types, index_type_markers):
-            legend.append(
-                Line2D([0], [0], marker=marker, linestyle="", color="black", label=f"index type {index_type}")
-            )
-        for block_shape, color in zip(block_shapes, colors):
-            legend.append(Patch(facecolor=color, label=f"{'×'.join(str(size) for size in block_shape)} blocks"))
-        ax1.legend(handles=legend)
-        ax1.set_title(f"Error between compressed and uncompressed {metric}")
-        ax1.set_ylabel("absolute error")
-        ax1.set_xlabel("floating-point type")
-        ax1.set_ylim(max(ax1.get_ylim()[0], -0.1), max_error_without_nan)
-        ax1.autoscale_view()
 
-        ax2 = ax1.twinx()
-        ax2.set_ylabel("relative error")
-        ax2.set_ylim(ax1.get_ylim()[0] / flair_mean, ax1.get_ylim()[1] / flair_mean)
 
-        fig.tight_layout()
-        # plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
-        plt.show()
+        absolute_axis.set_title(f"Error between compressed and uncompressed {metric}")
+        absolute_axis.set_ylabel("absolute error")
+        absolute_axis.set_xlabel("floating-point type")
+        absolute_axis.set_ylim(max(absolute_axis.get_ylim()[0], -0.1), max_error_without_nan)
+        absolute_axis.autoscale_view()
+
+        figure.tight_layout()
+        plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
+        # plt.show()
+
+
+def plot_legend(block_shapes, colors, index_type_markers, index_types, save_path):
+    plt.clf()
+    plt.figure(figsize=(7.5, 0.8))
+    legend = [Line2D([0], [0], marker="_", markersize=10, linestyle="", color="black", label=f"compression ratio")]
+    for index_type, marker in zip(index_types, index_type_markers):
+        legend.append(Line2D([0], [0], marker=marker, linestyle="", color="black", label=f"index type {index_type}"))
+    for block_shape, color in zip(block_shapes, colors):
+        legend.append(Patch(facecolor=color, label=f"{'×'.join(str(size) for size in block_shape)} blocks"))
+    plt.legend(loc="center", ncol=len(legend) // 2, handles=legend)
+    plt.gca().axis("off")
+    plt.savefig(save_path / f"mri_flair_legend.pdf")
+    # plt.show()
 
 
 if __name__ == "__main__":
