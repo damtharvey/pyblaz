@@ -26,11 +26,12 @@ def main():
     results_path = pathlib.Path(args.results) / "mri"
     results_path.mkdir(parents=True, exist_ok=True)
 
-    to_write = ["float_type,index_type,block_shape,metric,error"]
+    to_write = ["original_shape,float_type,index_type,block_shape,metric,error"]
     for float_type in (torch.bfloat16, torch.float16, torch.float32, torch.float64):
         for index_type in (torch.int8, torch.int16):
             for block_shape in (4, 4, 4), (8, 8, 8), (16, 16, 16), (4, 8, 8), (4, 16, 16), (8, 16, 16):
                 compressor = compression.Compressor(block_shape, dtype=float_type, index_dtype=index_type)
+
                 pretty_print_float_type = str(float_type)[6:]
                 pretty_print_index_type = str(index_type)[6:]
                 pretty_print_block_shape = "×".join(str(size) for size in block_shape)
@@ -44,19 +45,24 @@ def main():
                     flair = torch.load(example_path)[Channel.FLAIR].to(device)
                     compressed_flair = compressor.compress(flair)
 
+                    pretty_print_original_shape = "×".join(str(x) for x in flair.shape)
+
                     to_write.append(
+                        f"{pretty_print_original_shape},"
                         f"{pretty_print_float_type},"
                         f"{pretty_print_index_type},"
                         f"{pretty_print_block_shape},mean,"
                         f"{flair.mean() - compressed_flair.mean()}"
                     )
                     to_write.append(
+                        f"{pretty_print_original_shape},"
                         f"{pretty_print_float_type},"
                         f"{pretty_print_index_type},"
                         f"{pretty_print_block_shape},variance,"
                         f"{flair.var(unbiased=False) - compressed_flair.variance()}"
                     )
                     to_write.append(
+                        f"{pretty_print_original_shape},"
                         f"{pretty_print_float_type},"
                         f"{pretty_print_index_type},"
                         f"{pretty_print_block_shape},norm_2,"

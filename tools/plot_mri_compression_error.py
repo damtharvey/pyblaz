@@ -34,8 +34,6 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
     float_types = {"float16": 16, "bfloat16": 16, "float32": 32, "float64": 64}
     horizontal_values = np.arange(len(float_types))
     flair_mean = 0.087
-    mean_image_shape = (36, 256, 256)
-    uncompressed_image_size = plot_space.uncompressed_size(mean_image_shape)
     with open(results_path / "mri_metrics.csv") as file:
         dataframe = pd.read_csv(file)
     for metric in ("mean", "variance", "norm_2"):
@@ -57,18 +55,33 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
         for index_type, marker, index_type_offset in zip(index_types, index_type_markers, index_type_offsets):
             for block_shape, color, block_shape_offset in zip(block_shapes, colors, block_shape_offsets):
                 error_means = []
+                mean_compression_ratios = []
                 for center_position, float_type in enumerate(float_types):
-                    selected_absolute_error = dataframe[
+                    selection = dataframe[
                         (dataframe.index_type == index_type)
                         & (dataframe.block_shape == "×".join(str(size) for size in block_shape))
                         & (dataframe.float_type == float_type)
                         & (dataframe.metric == metric)
-                    ].error.abs()
+                    ]
+                    selected_absolute_error = selection.error.abs()
                     if selected_absolute_error.hasnans or any(selected_absolute_error == float("inf")):
                         error_means.append(float("nan"))
                     else:
                         max_error_without_nan = max(max_error_without_nan, selected_absolute_error.max())
                         error_means.append(selected_absolute_error.mean())
+
+                    compression_ratios = []
+                    for original_shape in selection.original_shape:
+                        original_shape = tuple(int(x) for x in original_shape.split("×"))
+                        compression_ratios.append(
+                            plot_space.uncompressed_size(original_shape)
+                            / plot_space.compressed_size(
+                                original_shape, block_shape, 1, float_types[float_type], index_types[index_type]
+                            )
+                        )
+
+                    mean_compression_ratios.append(np.array(compression_ratios).mean())
+
                     absolute_axis.scatter(
                         [center_position + block_shape_offset + index_type_offset] * len(selected_absolute_error),
                         selected_absolute_error,
@@ -77,23 +90,24 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
                         alpha=0.05,
                     )
 
-                compression_ratios = [
-                    uncompressed_image_size
-                    / plot_space.compressed_size(
-                        mean_image_shape, block_shape, 1, float_types[float_type], index_types[index_type]
-                    )
-                    for float_type in float_types
-                ]
+                # compression_ratios = [
+                #     uncompressed_image_size
+                #     / plot_space.compressed_size(
+                #         mean_image_shape, block_shape, 1, float_types[float_type], index_types[index_type]
+                #     )
+                #     for float_type in float_types
+                # ]
+
                 ratio_axis.bar(
                     horizontal_values + block_shape_offset + index_type_offset,
-                    compression_ratios,
+                    mean_compression_ratios,
                     color="black",
                     alpha=0.1,
-                    width=0.02
+                    width=0.02,
                 )
                 ratio_axis.scatter(
                     horizontal_values + block_shape_offset + index_type_offset,
-                    compression_ratios,
+                    mean_compression_ratios,
                     marker="_",
                     s=50,
                     color="black",
@@ -102,8 +116,6 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
                 absolute_axis.scatter(
                     horizontal_values + block_shape_offset + index_type_offset, error_means, marker=marker, color=color
                 )
-
-
 
         absolute_axis.set_title(f"Error between compressed and uncompressed {metric}")
         absolute_axis.set_ylabel("absolute error")
@@ -118,8 +130,8 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
 
 def plot_legend(block_shapes, colors, index_type_markers, index_types, save_path):
     plt.clf()
-    plt.figure(figsize=(7.5, 0.8))
-    legend = [Line2D([0], [0], marker="_", markersize=10, linestyle="", color="black", label=f"compression ratio")]
+    plt.figure(figsize=(8, 0.8))
+    legend = [Line2D([0], [0], marker="_", markersize=10, linestyle="", color="black", label=f"mean compression ratio")]
     for index_type, marker in zip(index_types, index_type_markers):
         legend.append(Line2D([0], [0], marker=marker, linestyle="", color="black", label=f"index type {index_type}"))
     for block_shape, color in zip(block_shapes, colors):
