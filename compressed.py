@@ -159,7 +159,12 @@ class CompressedTensor:
         """
         :returns: the L_2 norm.
         """
-        return self.dot(self) ** 0.5
+        # TODO: Compare with self.dot(self) ** 0.5
+
+        self_biggest_coefficients_scaled = (
+            self.biggest_coefficients[(...,) + (None,) * self.n_dimensions] / INDICES_RADIUS[self.indicess.dtype]
+        )
+        return (self.indicess.type(self.biggest_coefficients.dtype) * self_biggest_coefficients_scaled).norm(2)
 
     def cosine_similarity(self, other) -> float:
         return self.dot(other) / (self.norm_2() * other.norm_2())
@@ -168,11 +173,11 @@ class CompressedTensor:
         """
         :returns: the arithmetic mean of the compressed tensor.
         """
+        biggest_coefficients_scaled = self.biggest_coefficients / INDICES_RADIUS[self.indicess.dtype]
         return (
             (
                 self.indicess.type(self.biggest_coefficients.dtype)[(...,) + (0,) * self.n_dimensions]
-                * self.biggest_coefficients
-                / INDICES_RADIUS[self.indicess.dtype]
+                * biggest_coefficients_scaled
             ).sum()
             / torch.prod(torch.tensor(self.blocks_shape))
             / torch.prod(torch.tensor(self.block_shape) ** 0.5)
@@ -183,11 +188,10 @@ class CompressedTensor:
         :param sample: whether to return the sample variance
         :returns: the variance of the compressed tensor
         """
-        coefficientss = (
-            self.indicess.type(self.biggest_coefficients.dtype)
-            * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
-            / INDICES_RADIUS[self.indicess.dtype]
+        biggest_coefficients_scaled = (
+            self.biggest_coefficients[(...,) + (None,) * self.n_dimensions] / INDICES_RADIUS[self.indicess.dtype]
         )
+        coefficientss = self.indicess.type(self.biggest_coefficients.dtype) * biggest_coefficients_scaled
 
         coefficientss[(...,) + (0,) * self.n_dimensions] -= coefficientss[
             (...,) + (0,) * self.n_dimensions
