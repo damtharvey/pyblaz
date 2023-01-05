@@ -144,17 +144,15 @@ class CompressedTensor:
         """
         :returns: the dot product of this tensor with another compressed tensor.
         """
+        self_biggest_coefficients_scaled = (
+            self.biggest_coefficients[(...,) + (None,) * self.n_dimensions] / INDICES_RADIUS[self.indicess.dtype]
+        )
+        other_biggest_coefficients_scaled = (
+            other.biggest_coefficients[(...,) + (None,) * other.n_dimensions] / INDICES_RADIUS[other.indicess.dtype]
+        )
         return (
-            (
-                self.indicess.type(self.biggest_coefficients.dtype)
-                * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
-                / INDICES_RADIUS[self.indicess.dtype]
-            )
-            * (
-                other.indicess.type(other.biggest_coefficients.dtype)
-                * other.biggest_coefficients[(...,) + (None,) * other.n_dimensions]
-                / INDICES_RADIUS[other.indicess.dtype]
-            )
+            (self.indicess.type(self.biggest_coefficients.dtype) * self_biggest_coefficients_scaled)
+            * (other.indicess.type(other.biggest_coefficients.dtype) * other_biggest_coefficients_scaled)
         ).sum()
 
     def norm_2(self) -> float:

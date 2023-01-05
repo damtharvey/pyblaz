@@ -32,6 +32,7 @@ def main():
         dataframe = pd.read_csv(file)
     for metric in ("mean", "variance", "norm_2"):
         plt.clf()
+        max_error_without_nan = 0
         fig = plt.figure(figsize=(8, 4))
         ax1 = fig.add_subplot(111)
 
@@ -45,20 +46,18 @@ def main():
                         & (dataframe.float_type == float_type)
                         & (dataframe.metric == metric)
                     ].error.abs()
-                    if selected_absolute_error.hasnans:
+                    if selected_absolute_error.hasnans or any(selected_absolute_error == float("inf")):
                         error_means.append(float("nan"))
                     else:
+                        max_error_without_nan = max(max_error_without_nan, selected_absolute_error.max())
                         error_means.append(selected_absolute_error.mean())
-                        no_nans = selected_absolute_error.dropna()
-                        #  norm_2 using float16 has one dot at about 14. Excluding it to make the plot more useful.
-                        no_nans = no_nans[no_nans < 10]
-                        ax1.scatter(
-                            [center_position + block_shape_offset + index_type_offset] * len(no_nans),
-                            no_nans,
-                            s=4,
-                            color=color,
-                            alpha=0.05,
-                        )
+                    ax1.scatter(
+                        [center_position + block_shape_offset + index_type_offset] * len(selected_absolute_error),
+                        selected_absolute_error,
+                        s=4,
+                        color=color,
+                        alpha=0.05,
+                    )
 
                 ax1.scatter(
                     horizontal_values + block_shape_offset + index_type_offset, error_means, marker=marker, color=color
@@ -76,14 +75,16 @@ def main():
         ax1.set_title(f"Error between compressed and uncompressed {metric}")
         ax1.set_ylabel("absolute error")
         ax1.set_xlabel("floating-point type")
+        ax1.set_ylim(max(ax1.get_ylim()[0], -0.1), max_error_without_nan)
+        ax1.autoscale_view()
 
         ax2 = ax1.twinx()
         ax2.set_ylabel("relative error")
         ax2.set_ylim(ax1.get_ylim()[0] / flair_mean, ax1.get_ylim()[1] / flair_mean)
 
         fig.tight_layout()
-        plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
-        # plt.show()
+        # plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
+        plt.show()
 
 
 if __name__ == "__main__":
