@@ -18,10 +18,13 @@ def main():
     save_path = results_path / "figures"
     save_path.mkdir(parents=True, exist_ok=True)
 
+    flair_mean = 0.087
+
     colors = list(matplotlib.colors.TABLEAU_COLORS.keys())
     index_types = ("int8", "int16")
     index_type_markers = ("s", "D")
-    index_type_offsets = (-0.04, 0.04)
+    marker_size = 18
+    index_type_offsets = (-0.038, 0.038)
     block_shapes = (4, 4, 4), (8, 8, 8), (16, 16, 16), (4, 8, 8), (4, 16, 16), (8, 16, 16)
     block_shape_offsets = ((range_shapes := np.arange(len(block_shapes))) - range_shapes.mean()) * 0.16
     float_types = ("float16", "bfloat16", "float32", "float64")
@@ -30,6 +33,9 @@ def main():
         dataframe = pd.read_csv(file)
     for metric in ("mean", "variance", "norm_2"):
         plt.clf()
+        fig = plt.figure()
+        ax1 = fig.add_subplot(111)
+
         for index_type, marker, index_type_offset in zip(index_types, index_type_markers, index_type_offsets):
             for block_shape, color, block_shape_offset in zip(block_shapes, colors, block_shape_offsets):
                 error_means = []
@@ -47,30 +53,47 @@ def main():
                         no_nans = selected_absolute_error.dropna()
                         #  norm_2 using float16 has one dot at about 14. Excluding it to make the plot more useful.
                         no_nans = no_nans[no_nans < 10]
-                        plt.scatter(
+                        ax1.scatter(
                             [center_position + block_shape_offset + index_type_offset] * len(no_nans),
                             no_nans,
-                            s=8,
+                            s=4,
                             color=color,
                             alpha=0.05,
                         )
 
-                plt.scatter(
-                    horizontal_values + block_shape_offset + index_type_offset, error_means, marker=marker, color=color
+                ax1.scatter(
+                    horizontal_values + block_shape_offset + index_type_offset,
+                    error_means,
+                    marker=marker,
+                    s=marker_size,
+                    color=color,
                 )
 
-        plt.xticks(horizontal_values, float_types)
+        ax1.set_xticks(horizontal_values, float_types)
         legend = []
         for index_type, marker in zip(index_types, index_type_markers):
             legend.append(
-                Line2D([0], [0], marker=marker, linestyle="", color="black", label=f"index type {index_type}")
+                Line2D(
+                    [0],
+                    [0],
+                    marker=marker,
+                    markersize=marker_size / 4,
+                    linestyle="",
+                    color="black",
+                    label=f"index type {index_type}",
+                )
             )
         for block_shape, color in zip(block_shapes, colors):
             legend.append(Patch(facecolor=color, label=f"{'×'.join(str(size) for size in block_shape)} blocks"))
-        plt.legend(handles=legend)
-        plt.title(f"Error between compressed and uncompressed {metric} of FLAIR")
-        plt.ylabel("absolute error")
-        plt.xlabel("floating-point type")
+        ax1.legend(handles=legend)
+        ax1.set_title(f"Error between compressed and uncompressed {metric}")
+        ax1.set_ylabel("absolute error")
+        ax1.set_xlabel("floating-point type")
+
+        ax2 = ax1.twinx()
+        ax2.set_ylabel("relative error")
+        ax2.set_ylim(ax1.get_ylim()[0] / flair_mean, ax1.get_ylim()[1] / flair_mean)
+
         plt.tight_layout()
         plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
         # plt.show()
