@@ -23,7 +23,6 @@ def main():
     colors = list(matplotlib.colors.TABLEAU_COLORS.keys())
     index_types = ("int8", "int16")
     index_type_markers = ("s", "D")
-    marker_size = 18
     index_type_offsets = (-0.038, 0.038)
     block_shapes = (4, 4, 4), (8, 8, 8), (16, 16, 16), (4, 8, 8), (4, 16, 16), (8, 16, 16)
     block_shape_offsets = ((range_shapes := np.arange(len(block_shapes))) - range_shapes.mean()) * 0.16
@@ -33,7 +32,7 @@ def main():
         dataframe = pd.read_csv(file)
     for metric in ("mean", "variance", "norm_2"):
         plt.clf()
-        fig = plt.figure()
+        fig = plt.figure(figsize=(8, 4))
         ax1 = fig.add_subplot(111)
 
         for index_type, marker, index_type_offset in zip(index_types, index_type_markers, index_type_offsets):
@@ -62,26 +61,14 @@ def main():
                         )
 
                 ax1.scatter(
-                    horizontal_values + block_shape_offset + index_type_offset,
-                    error_means,
-                    marker=marker,
-                    s=marker_size,
-                    color=color,
+                    horizontal_values + block_shape_offset + index_type_offset, error_means, marker=marker, color=color
                 )
 
         ax1.set_xticks(horizontal_values, float_types)
         legend = []
         for index_type, marker in zip(index_types, index_type_markers):
             legend.append(
-                Line2D(
-                    [0],
-                    [0],
-                    marker=marker,
-                    markersize=marker_size / 4,
-                    linestyle="",
-                    color="black",
-                    label=f"index type {index_type}",
-                )
+                Line2D([0], [0], marker=marker, linestyle="", color="black", label=f"index type {index_type}")
             )
         for block_shape, color in zip(block_shapes, colors):
             legend.append(Patch(facecolor=color, label=f"{'×'.join(str(size) for size in block_shape)} blocks"))
@@ -94,7 +81,7 @@ def main():
         ax2.set_ylabel("relative error")
         ax2.set_ylim(ax1.get_ylim()[0] / flair_mean, ax1.get_ylim()[1] / flair_mean)
 
-        plt.tight_layout()
+        fig.tight_layout()
         plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
         # plt.show()
 
