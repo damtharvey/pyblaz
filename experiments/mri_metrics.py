@@ -1,5 +1,7 @@
 import argparse
 import pathlib
+import itertools
+import math
 
 import torch
 import tqdm
@@ -15,8 +17,8 @@ class Channel:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", type=str, default="../data")
-    parser.add_argument("--results", type=str, default="../results")
+    parser.add_argument("--data", type=str, default="data")
+    parser.add_argument("--results", type=str, default="results")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -26,11 +28,20 @@ def main():
     results_path = pathlib.Path(args.results) / "mri"
     results_path.mkdir(parents=True, exist_ok=True)
 
-    to_write = ["original_shape,float_type,index_type,block_shape,metric,error"]
+    keep_proportion = 0.5
+
+    to_write = ["original_shape,float_type,index_type,block_shape,keep_proportion,metric,error"]
     for float_type in (torch.bfloat16, torch.float16, torch.float32, torch.float64):
         for index_type in (torch.int8, torch.int16):
             for block_shape in (4, 4, 4), (8, 8, 8), (16, 16, 16), (4, 8, 8), (4, 16, 16), (8, 16, 16):
-                compressor = compression.Compressor(block_shape, dtype=float_type, index_dtype=index_type)
+                n_coefficients = int(math.prod(block_shape) * keep_proportion)
+                mask = torch.zeros(block_shape, dtype=torch.bool)
+                for index in sorted(
+                    itertools.product(*(range(size) for size in block_shape)),
+                    key=lambda x: sum(x),
+                )[:n_coefficients]:
+                    mask[index] = True
+                compressor = compression.Compressor(block_shape, dtype=float_type, index_dtype=index_type, mask=mask)
 
                 pretty_print_float_type = str(float_type)[6:]
                 pretty_print_index_type = str(index_type)[6:]
@@ -51,21 +62,27 @@ def main():
                         f"{pretty_print_original_shape},"
                         f"{pretty_print_float_type},"
                         f"{pretty_print_index_type},"
-                        f"{pretty_print_block_shape},mean,"
+                        f"{pretty_print_block_shape},"
+                        f"{keep_proportion},"
+                        f"mean,"
                         f"{flair.mean() - compressed_flair.mean()}"
                     )
                     to_write.append(
                         f"{pretty_print_original_shape},"
                         f"{pretty_print_float_type},"
                         f"{pretty_print_index_type},"
-                        f"{pretty_print_block_shape},variance,"
+                        f"{pretty_print_block_shape},"
+                        f"{keep_proportion},"
+                        f"variance,"
                         f"{flair.var(unbiased=False) - compressed_flair.variance()}"
                     )
                     to_write.append(
                         f"{pretty_print_original_shape},"
                         f"{pretty_print_float_type},"
                         f"{pretty_print_index_type},"
-                        f"{pretty_print_block_shape},norm_2,"
+                        f"{pretty_print_block_shape},"
+                        f"{keep_proportion},"
+                        f"norm_2,"
                         f"{flair.norm(2) - compressed_flair.norm_2()}"
                     )
     with open(results_path / "mri_metrics.csv", "w") as file:

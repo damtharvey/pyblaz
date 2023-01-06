@@ -1,5 +1,7 @@
 import argparse
 import pathlib
+import math
+import itertools
 
 import tqdm
 
@@ -35,6 +37,7 @@ def main():
             index_dtypes := {"int8": torch.int8, "int16": torch.int16, "int32": torch.int32, "int64": torch.int64}
         ),
     )
+    parser.add_argument("--keep-proportion", type=float, default=0.5)
     parser.add_argument("--results-path", type=str, default="results")
     parser.add_argument("--experiment-name", type=str, default="time")
     args = parser.parse_args()
@@ -45,10 +48,19 @@ def main():
     results_save_path = pathlib.Path(args.results_path) / args.experiment_name / f"{args.dimensions}d"
     results_save_path.mkdir(parents=True, exist_ok=True)
 
+    block_shape = (args.block_size,) * args.dimensions
+    n_coefficients = int(math.prod(block_shape) * args.keep_proportion)
+    # mask = torch.zeros(block_shape, dtype=torch.bool)
+    # for index in sorted(
+    #     itertools.product(*(range(size) for size in block_shape)),
+    #     key=lambda coordinates: sum(coordinates),
+    # )[:n_coefficients]:
+    #     mask[index] = True
     compressor = compression.Compressor(
-        block_shape=(args.block_size,) * args.dimensions,
+        block_shape=block_shape,
         dtype=dtype,
         index_dtype=index_dtypes[args.index_dtype],
+        # mask=mask,
         device=device,
     )
 

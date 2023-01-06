@@ -76,7 +76,11 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
                         compression_ratios.append(
                             plot_space.uncompressed_size(original_shape)
                             / plot_space.compressed_size(
-                                original_shape, block_shape, 1, float_types[float_type], index_types[index_type]
+                                original_shape,
+                                block_shape,
+                                dataframe.keep_proportion,
+                                float_types[float_type],
+                                index_types[index_type],
                             )
                         )
 
@@ -133,8 +137,8 @@ def plot_legend(block_shapes, colors, index_type_markers, index_types, save_path
         legend.append(Patch(facecolor=color, label=f"{'×'.join(str(size) for size in block_shape)} blocks"))
     plt.legend(loc="center", ncol=len(legend) // 2, handles=legend)
     plt.gca().axis("off")
-    plt.savefig(save_path / f"mri_flair_legend.pdf")
-    # plt.show()
+    # plt.savefig(save_path / f"mri_flair_legend.pdf")
+    plt.show()
 
 
 if __name__ == "__main__":
