@@ -80,36 +80,27 @@ class CompressedTensor:
         assert torch.equal(self.mask, other.mask), "Masks must match between tensors that will be added."
 
         indices = (
-            self.indicess * self.biggest_coefficients[..., None] + other.indicess * other.biggest_coefficients[..., None]
+            self.indicess * self.biggest_coefficients[..., None]
+            + other.indicess * other.biggest_coefficients[..., None]
         )
         proportion_of_radius = indices.norm(torch.inf, -1) / INDICES_RADIUS[self.indicess.dtype]
         indices = torch.nan_to_num((indices / proportion_of_radius[..., None]).round().type(self.indicess.dtype))
-        return CompressedTensor(
-            self.original_shape,
-            proportion_of_radius,
-            indices,
-            self.mask
-        )
+        return CompressedTensor(self.original_shape, proportion_of_radius, indices, self.mask)
 
     def add_scalar(self, other):
         coefficientss = (
             self.indicess.type(self.biggest_coefficients.dtype)
-            * self.biggest_coefficients[..., -1]
+            * self.biggest_coefficients[..., None]
             / INDICES_RADIUS[self.indicess.dtype]
         )
         coefficientss[..., 0] += other * torch.prod(torch.tensor(self.block_shape) ** 0.5)
         biggest_coefficients = coefficientss.norm(torch.inf, -1)
         indices = (
-            (coefficientss * (INDICES_RADIUS[self.indicess.dtype] / biggest_coefficients[..., -1]))
+            (coefficientss * (INDICES_RADIUS[self.indicess.dtype] / biggest_coefficients[..., None]))
             .round()
             .type(self.indicess.dtype)
         )
-        return CompressedTensor(
-            self.original_shape,
-            biggest_coefficients,
-            indices,
-            self.mask
-        )
+        return CompressedTensor(self.original_shape, biggest_coefficients, indices, self.mask)
 
     def __sub__(self, other):
         """
@@ -144,27 +135,48 @@ class CompressedTensor:
         """
         assert torch.equal(self.mask, other.mask), "Masks must match between tensors that will be dotted...for now."
 
-        return (
+        dot_product = (
             (
-                (self.biggest_coefficients[..., None] / INDICES_RADIUS[self.indicess.dtype])
-                * self.indicess.type(self.biggest_coefficients.dtype)
+                self.indicess.type(self.biggest_coefficients.dtype)
+                * (self.biggest_coefficients[..., None] / INDICES_RADIUS[self.indicess.dtype])
             )
             * (
-                (other.biggest_coefficients[..., None] / INDICES_RADIUS[other.indicess.dtype])
-                * other.indicess.type(other.biggest_coefficients.dtype)
+                other.indicess.type(other.biggest_coefficients.dtype)
+                * (other.biggest_coefficients[..., None] / INDICES_RADIUS[other.indicess.dtype])
             )
         ).sum()
+        if not dot_product.isnan():
+            return dot_product
+        else:
+            return (
+                (
+                    (self.biggest_coefficients[..., None] / INDICES_RADIUS[self.indicess.dtype])
+                    * self.indicess.type(self.biggest_coefficients.dtype)
+                )
+                * (
+                    (other.biggest_coefficients[..., None] / INDICES_RADIUS[other.indicess.dtype])
+                    * other.indicess.type(other.biggest_coefficients.dtype)
+                )
+            ).sum()
 
     def norm_2(self) -> float:
         """
         :returns: the L_2 norm.
         """
         # Faster than self.dot(self) ** 0.5
-        return (
-            self.biggest_coefficients[..., None]
+        magnitude = (
+            self.indicess.type(self.biggest_coefficients.dtype)
+            * self.biggest_coefficients[..., None]
             / INDICES_RADIUS[self.indicess.dtype]
-            * self.indicess.type(self.biggest_coefficients.dtype)
         ).norm(2)
+        if not magnitude.isnan():
+            return magnitude
+        else:
+            return (
+                self.biggest_coefficients[..., None]
+                / INDICES_RADIUS[self.indicess.dtype]
+                * self.indicess.type(self.biggest_coefficients.dtype)
+            ).norm(2)
 
     def cosine_similarity(self, other) -> float:
         return self.dot(other) / (self.norm_2() * other.norm_2())
@@ -173,15 +185,28 @@ class CompressedTensor:
         """
         :returns: the arithmetic mean of the compressed tensor.
         """
-        return (
-            (
-                self.biggest_coefficients
-                / INDICES_RADIUS[self.indicess.dtype]
-                * self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
-            ).sum()
-            / torch.prod(torch.tensor(self.blocks_shape))
-            / torch.prod(torch.tensor(self.block_shape) ** 0.5)
-        )
+        first_coefficients_sum = (
+            self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
+            * self.biggest_coefficients
+            / INDICES_RADIUS[self.indicess.dtype]
+        ).sum()
+
+        if not first_coefficients_sum.isnan():
+            return (
+                first_coefficients_sum
+                / torch.prod(torch.tensor(self.blocks_shape))
+                / torch.prod(torch.tensor(self.block_shape) ** 0.5)
+            )
+        else:
+            return (
+                (
+                    self.biggest_coefficients
+                    / INDICES_RADIUS[self.indicess.dtype]
+                    * self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
+                ).sum()
+                / torch.prod(torch.tensor(self.blocks_shape))
+                / torch.prod(torch.tensor(self.block_shape) ** 0.5)
+            )
 
     def variance(self, sample: bool = False) -> float:
         """
@@ -189,10 +214,16 @@ class CompressedTensor:
         :returns: the variance of the compressed tensor
         """
         coefficientss = (
-            self.biggest_coefficients[..., None]
+            self.indicess.type(self.biggest_coefficients.dtype)
+            * self.biggest_coefficients[..., None]
             / INDICES_RADIUS[self.indicess.dtype]
-            * self.indicess.type(self.biggest_coefficients.dtype)
         )
+        if coefficientss.isnan().any():
+            coefficientss = (
+                self.biggest_coefficients[..., None]
+                / INDICES_RADIUS[self.indicess.dtype]
+                * self.indicess.type(self.biggest_coefficients.dtype)
+            )
 
         coefficientss[..., 0] -= coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
 

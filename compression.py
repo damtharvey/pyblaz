@@ -77,6 +77,9 @@ def _test():
         # compressed add
         results.append((compressor.decompress(compressed_x + compressed_y) - (x + y)).norm(torch.inf))
 
+        # compressed add scalar
+        results.append((compressor.decompress(compressed_x + 3.14159) - (x + 3.14159)).norm(torch.inf))
+
         # compressed multiply
         results.append((compressor.decompress(compressed_x * 3.14159) - (x * 3.14159)).norm(torch.inf))
 
@@ -101,7 +104,19 @@ def _test():
     print(
         tabulate(
             table,
-            headers=("size", "codec", "negate", "add", "multiply", "dot", "norm2", "mean", "variance", "cosine"),
+            headers=(
+                "size",
+                "codec",
+                "negate",
+                "add",
+                "add_scalar",
+                "multiply",
+                "dot",
+                "norm2",
+                "mean",
+                "variance",
+                "cosine",
+            ),
         )
     )
 

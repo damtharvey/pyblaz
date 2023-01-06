@@ -112,18 +112,15 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
         absolute_axis.set_title(f"Error between compressed and uncompressed {metric}")
         absolute_axis.set_ylabel("absolute error")
         absolute_axis.set_xlabel("floating-point type")
-        if metric == "norm_2":
-            absolute_axis.set_ylim(max(absolute_axis.get_ylim()[0], -0.1), 2)  # float16 has high error. Useless to see.
-        else:
-            absolute_axis.set_ylim(max(absolute_axis.get_ylim()[0], -0.1), max_error_without_nan)
+        absolute_axis.set_ylim(max(absolute_axis.get_ylim()[0], -0.1), max_error_without_nan)
 
         # absolute_axis.autoscale_view()
 
         ratio_axis.set_ylim(bottom=1)
 
         figure.tight_layout()
-        plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
-        # plt.show()
+        # plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
+        plt.show()
 
 
 def plot_legend(block_shapes, colors, index_type_markers, index_types, save_path):
