@@ -13,7 +13,97 @@ from compressed import CompressedBlock, CompressedTensor
 
 
 def _test():
-    pass
+    import argparse
+    from tabulate import tabulate
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--runs", type=int, default=5)
+    parser.add_argument("--dimensions", type=int, default=3)
+    parser.add_argument("--block-size", type=int, default=8, help="size of a hypercubic block")
+    parser.add_argument("--max-size", type=int, default=256)
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="float32",
+        choices=(
+            dtypes := {
+                "bfloat16": torch.bfloat16,
+                "float16": torch.float16,
+                "float32": torch.float32,
+                "float64": torch.float64,
+            }
+        ),
+    )
+    parser.add_argument(
+        "--index-dtype",
+        type=str,
+        default="int16",
+        choices=(
+            index_dtypes := {"int8": torch.int8, "int16": torch.int16, "int32": torch.int32, "int64": torch.int64}
+        ),
+    )
+    args = parser.parse_args()
+
+    dtype = dtypes[args.dtype]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    block_shape = (args.block_size,) * args.dimensions
+    compressor = Compressor(
+        block_shape=block_shape,
+        dtype=dtype,
+        index_dtype=index_dtypes[args.index_dtype],
+        device=device,
+    )
+
+    table = []
+
+    for size in tqdm.tqdm(
+        tuple(1 << p for p in range(args.block_size.bit_length() - 1, args.max_size.bit_length())),
+        desc=f"time {args.dimensions}D",
+    ):
+        results = [size]
+
+        x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
+        y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
+
+        # compress
+        compressed_x = compressor.compress(x)
+        compressed_y = compressor.compress(y)
+        results.append((compressor.decompress(compressed_x) - x).norm(torch.inf))
+
+        # compressed negate
+        results.append((compressor.decompress(-compressed_x) + x).norm(torch.inf))
+
+        # compressed add
+        results.append((compressor.decompress(compressed_x + compressed_y) - (x + y)).norm(torch.inf))
+
+        # compressed multiply
+        results.append((compressor.decompress(compressed_x * 3.14159) - (x * 3.14159)).norm(torch.inf))
+
+        # compressed dot
+        results.append(abs((compressed_x.dot(compressed_y) - (x * y).sum())))
+
+        # compressed norm2
+        results.append(abs(compressed_x.norm_2() - x.norm(2)))
+
+        # compressed mean
+        _ = compressed_x.mean()
+        results.append(abs(compressed_x.mean() - x.mean()))
+
+        # compressed variance
+        results.append(abs(compressed_x.variance() - x.var(unbiased=False)))
+
+        # compressed cosine similarity
+        results.append(abs(compressed_x.cosine_similarity(compressed_y) - (x * y).sum() / (x.norm(2) * y.norm(2))))
+
+        table.append(results)
+
+    print(
+        tabulate(
+            table,
+            headers=("size", "codec", "negate", "add", "multiply", "dot", "norm2", "mean", "variance", "cosine"),
+        )
+    )
 
 
 class Compressor:
@@ -42,6 +132,7 @@ class Compressor:
         transform: callable = transforms.cosine,
         dtype: torch.dtype = torch.float32,
         index_dtype: torch.dtype = torch.int8,
+        mask: torch.BoolTensor = None,
         device: torch.device = torch.device("cuda"),
         transform_tensor_directory: pathlib.Path = pathlib.Path("temp") / "transform_tensors",
     ):
@@ -51,6 +142,7 @@ class Compressor:
         self.n_dimensions = len(block_shape)
         self.dtype = dtype
         self.index_dtype = index_dtype
+        self.mask = mask.to(device) if mask is not None else torch.ones(block_shape, dtype=torch.bool, device=device)
         self.device = device
         self.transform_tensor_directory = transform_tensor_directory
 
@@ -71,11 +163,9 @@ class Compressor:
         )
 
         blocked = self.block(tensor)
-        indicess, biggest_coefficients = self.bin(self.blockwise_transform(blocked))
-
-        return CompressedTensor(
-            tensor.shape, biggest_coefficients, indicess
-        )
+        # If there is pruning, it is faster to calculate all coefficients and then drop some.
+        indicess, biggest_coefficients = self.bin(self.blockwise_transform(blocked)[..., self.mask])
+        return CompressedTensor(tensor.shape, biggest_coefficients, indicess, self.mask)
 
     def decompress(self, compressed_tensor: CompressedTensor):
         """
@@ -85,7 +175,12 @@ class Compressor:
             f"Compressor dimensionality ({self.n_dimensions}) "
             f"must match tensor dimensionality ({compressed_tensor.n_dimensions})."
         )
-        unblocked = self.block_inverse(self.blockwise_transform(self.bin_inverse(compressed_tensor), inverse=True))
+        coefficientss = torch.zeros(
+            compressed_tensor.blocks_shape + compressed_tensor.block_shape, dtype=self.dtype, device=self.device
+        )
+        coefficientss[..., compressed_tensor.mask] = self.bin_inverse(compressed_tensor)
+
+        unblocked = self.block_inverse(self.blockwise_transform(coefficientss, inverse=True))
 
         return eval(f"unblocked[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
 
@@ -243,15 +338,9 @@ class Compressor:
         Bins are shaped (block indices, coefficient indices).
         Biggest coefficients are shaped (block indices).
         """
-        biggest_coefficients = coefficientss.norm(torch.inf, tuple(range(self.n_dimensions, 2 * self.n_dimensions)))
+        biggest_coefficients = coefficientss.norm(torch.inf, -1)
         return (
-            (
-                coefficientss
-                * (
-                    compressed.INDICES_RADIUS[self.index_dtype]
-                    / biggest_coefficients[(...,) + (None,) * self.n_dimensions]
-                )
-            )
+            (coefficientss * (compressed.INDICES_RADIUS[self.index_dtype] / biggest_coefficients[..., None]))
             .round()
             .type(self.index_dtype)
         ), biggest_coefficients
@@ -266,7 +355,7 @@ class Compressor:
         """
         return (
             compressed_tensor.indicess.type(self.dtype)
-            * compressed_tensor.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+            * compressed_tensor.biggest_coefficients[..., None]
             / compressed.INDICES_RADIUS[compressed_tensor.indicess.dtype]
         )
 

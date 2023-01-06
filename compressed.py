@@ -25,10 +25,12 @@ class CompressedTensor:
         original_shape: tuple[int, ...],
         biggest_coefficients: torch.Tensor,
         indicess: torch.Tensor,
+        mask: torch.Tensor = None,
     ):
         self.original_shape = original_shape
         self.biggest_coefficients = biggest_coefficients
         self.indicess = indicess
+        self.mask = mask
 
     @property
     def n_dimensions(self) -> int:
@@ -40,7 +42,7 @@ class CompressedTensor:
 
     @property
     def block_shape(self) -> tuple[int, ...]:
-        return self.indicess.shape[self.n_dimensions :]
+        return self.mask.shape
 
     def __getitem__(self, item: tuple[int, ...] or int) -> CompressedBlock:
         """
@@ -56,7 +58,7 @@ class CompressedTensor:
         """
         :returns: negated compressed tensor.
         """
-        return CompressedTensor(self.original_shape, self.biggest_coefficients, -self.indicess)
+        return CompressedTensor(self.original_shape, self.biggest_coefficients, -self.indicess, self.mask)
 
     def __add__(self, other):
         """
@@ -75,36 +77,30 @@ class CompressedTensor:
             raise TypeError(f"Add not defined between {type(self)} and {type(other)}.")
 
     def add_tensor(self, other):
+        assert torch.equal(self.mask, other.mask), "Masks must match between tensors that will be added."
+
         indices = (
-            self.indicess * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
-            + other.indicess * other.biggest_coefficients[(...,) + (None,) * other.n_dimensions]
+            self.indicess * self.biggest_coefficients[..., None] + other.indicess * other.biggest_coefficients[..., None]
         )
-        proportion_of_radius = (
-            indices.norm(torch.inf, tuple(range(self.n_dimensions, 2 * self.n_dimensions)))
-            / INDICES_RADIUS[self.indicess.dtype]
-        )
-        indices = torch.nan_to_num(
-            (indices / proportion_of_radius[(...,) + (None,) * self.n_dimensions]).round().type(self.indicess.dtype)
-        )
+        proportion_of_radius = indices.norm(torch.inf, -1) / INDICES_RADIUS[self.indicess.dtype]
+        indices = torch.nan_to_num((indices / proportion_of_radius[..., None]).round().type(self.indicess.dtype))
         return CompressedTensor(
             self.original_shape,
             proportion_of_radius,
             indices,
+            self.mask
         )
 
     def add_scalar(self, other):
         coefficientss = (
             self.indicess.type(self.biggest_coefficients.dtype)
-            * self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+            * self.biggest_coefficients[..., -1]
             / INDICES_RADIUS[self.indicess.dtype]
         )
-        coefficientss[(...,) + (0,) * self.n_dimensions] += other * torch.prod(torch.tensor(self.block_shape) ** 0.5)
-        biggest_coefficients = coefficientss.norm(torch.inf, tuple(range(self.n_dimensions, 2 * self.n_dimensions)))
+        coefficientss[..., 0] += other * torch.prod(torch.tensor(self.block_shape) ** 0.5)
+        biggest_coefficients = coefficientss.norm(torch.inf, -1)
         indices = (
-            (
-                coefficientss
-                * (INDICES_RADIUS[self.indicess.dtype] / biggest_coefficients[(...,) + (None,) * self.n_dimensions])
-            )
+            (coefficientss * (INDICES_RADIUS[self.indicess.dtype] / biggest_coefficients[..., -1]))
             .round()
             .type(self.indicess.dtype)
         )
@@ -112,6 +108,7 @@ class CompressedTensor:
             self.original_shape,
             biggest_coefficients,
             indices,
+            self.mask
         )
 
     def __sub__(self, other):
@@ -128,7 +125,8 @@ class CompressedTensor:
             product = CompressedTensor(
                 self.original_shape,
                 self.biggest_coefficients * abs(other),
-                self.indicess * (1 if other >= 0 else -1),
+                self.indicess if other >= 0 else -self.indicess,
+                self.mask,
             )
             return product
         else:
@@ -144,16 +142,15 @@ class CompressedTensor:
         """
         :returns: the dot product of this tensor with another compressed tensor.
         """
+        assert torch.equal(self.mask, other.mask), "Masks must match between tensors that will be dotted...for now."
+
         return (
             (
-                (self.biggest_coefficients[(...,) + (None,) * self.n_dimensions] / INDICES_RADIUS[self.indicess.dtype])
+                (self.biggest_coefficients[..., None] / INDICES_RADIUS[self.indicess.dtype])
                 * self.indicess.type(self.biggest_coefficients.dtype)
             )
             * (
-                (
-                    other.biggest_coefficients[(...,) + (None,) * other.n_dimensions]
-                    / INDICES_RADIUS[other.indicess.dtype]
-                )
+                (other.biggest_coefficients[..., None] / INDICES_RADIUS[other.indicess.dtype])
                 * other.indicess.type(other.biggest_coefficients.dtype)
             )
         ).sum()
@@ -164,7 +161,7 @@ class CompressedTensor:
         """
         # Faster than self.dot(self) ** 0.5
         return (
-            self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+            self.biggest_coefficients[..., None]
             / INDICES_RADIUS[self.indicess.dtype]
             * self.indicess.type(self.biggest_coefficients.dtype)
         ).norm(2)
@@ -180,7 +177,7 @@ class CompressedTensor:
             (
                 self.biggest_coefficients
                 / INDICES_RADIUS[self.indicess.dtype]
-                * self.indicess.type(self.biggest_coefficients.dtype)[(...,) + (0,) * self.n_dimensions]
+                * self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
             ).sum()
             / torch.prod(torch.tensor(self.blocks_shape))
             / torch.prod(torch.tensor(self.block_shape) ** 0.5)
@@ -192,14 +189,12 @@ class CompressedTensor:
         :returns: the variance of the compressed tensor
         """
         coefficientss = (
-            self.biggest_coefficients[(...,) + (None,) * self.n_dimensions]
+            self.biggest_coefficients[..., None]
             / INDICES_RADIUS[self.indicess.dtype]
             * self.indicess.type(self.biggest_coefficients.dtype)
         )
 
-        coefficientss[(...,) + (0,) * self.n_dimensions] -= coefficientss[
-            (...,) + (0,) * self.n_dimensions
-        ].sum() / torch.prod(torch.tensor(self.blocks_shape))
+        coefficientss[..., 0] -= coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
 
         variance = (coefficientss**2).mean()
 
