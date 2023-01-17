@@ -18,7 +18,7 @@ for i in range(0, len(list)):
     array = npimg / 1023.0
     reshaped_array = array.reshape(1600, 66)
     print(reshaped_array)
-    np.savetxt("./data/plutonium/txt/n/" + str(list[i]) + ".csv", reshaped_array, delimiter=",")
+    # np.savetxt("./data/plutonium/txt/n/" + str(list[i]) + ".csv", reshaped_array, delimiter=",")
 
     input_file = "./data/plutonium/p/p_density3D_00000" + str(list[i]) + ".raw"
     npimg = np.fromfile(input_file, dtype=np.uint8)
@@ -27,7 +27,7 @@ for i in range(0, len(list)):
 
     npimg = npimg.reshape(imageSize)
     # npimg = np.squeeze(npimg, axis=2)
-    array = npimg / 1023.0
+    array = npimg
     reshaped_array = array.reshape(1600, 66)
-    print(reshaped_array)
-    np.savetxt("./data/plutonium/txt/p/" + str(list[i]) + ".csv", reshaped_array, delimiter=",")
+    print(sum(reshaped_array))
+    # np.savetxt("./data/plutonium/txt/p/" + str(list[i]) + ".csv", reshaped_array, delimiter=",")

@@ -38,9 +38,7 @@ def _test():
         "--index-dtype",
         type=str,
         default="int16",
-        choices=(
-            index_dtypes := {"int8": torch.int8, "int16": torch.int16, "int32": torch.int32, "int64": torch.int64}
-        ),
+        choices=(index_dtypes := {"int8": torch.int8, "int16": torch.int16}),
     )
     args = parser.parse_args()
 
@@ -69,6 +67,7 @@ def _test():
         # compress
         compressed_x = compressor.compress(x)
         compressed_y = compressor.compress(y)
+
         results.append((compressor.decompress(compressed_x) - x).norm(torch.inf))
 
         # compressed negate

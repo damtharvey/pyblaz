@@ -64,7 +64,7 @@ def main():
         device=device,
     )
 
-    to_write = ["size,compress,negate,add,multiply,dot,norm2,mean,variance,cosine_similarity,decompress"]
+    to_write = ["size,compress,negate,add,log,multiply,dot,norm2,mean,variance,cosine_similarity,decompress"]
 
     for size in tqdm.tqdm(
         tuple(1 << p for p in range(args.block_size.bit_length() - 1, args.max_size.bit_length())),

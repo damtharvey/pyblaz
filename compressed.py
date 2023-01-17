@@ -159,6 +159,11 @@ class CompressedTensor:
                 )
             ).sum()
 
+    def log(self):
+        # log_indicess = torch.log(self.indicess)
+        log_coeff = torch.log(self.biggest_coefficients)
+        return CompressedTensor(self.original_shape, log_coeff, self.indicess, self.mask)
+
     def norm_2(self) -> float:
         """
         :returns: the L_2 norm.
