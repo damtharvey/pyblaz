@@ -53,7 +53,8 @@ def _test():
         results = [size]
         x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
         y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
-
+        mean_x = []
+        mean_y = []
         # compress
         mean_subtraction = 0
         compressed_mean_subtraction = 0
@@ -61,11 +62,13 @@ def _test():
             for j in range(0, x.size()[1]):
                 compressed_x = compressor.compress(x[i, j, :])
                 compressed_y = compressor.compress(y[i, j, :])
-
+                mean_x.append(compressed_x.mean())
+                mean_y.append(compressed_y.mean())
                 mean_subtraction += abs(x[i, j, :].mean() - y[i, j, :].mean())
                 compressed_mean_subtraction += abs(compressed_y.mean() - compressed_x.mean())
         difference = abs(mean_subtraction - compressed_mean_subtraction)
-
+        # print(mean_x)
+        # print(mean_y)
         results.append(torch.mean(mean_subtraction))
         results.append(torch.mean(compressed_mean_subtraction))
         results.append(torch.mean(difference))

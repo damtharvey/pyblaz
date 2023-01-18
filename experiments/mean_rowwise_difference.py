@@ -60,7 +60,6 @@ def _test():
         for i in range(0, x.size()[0]):
             compressed_x = compressor.compress(x[i])
             compressed_y = compressor.compress(y[i])
-
             mean_subtraction += abs(x[i].mean() - y[i].mean())
             compressed_mean_subtraction += abs(compressed_y.mean() - compressed_x.mean())
         difference = abs(mean_subtraction - compressed_mean_subtraction)
