@@ -37,7 +37,7 @@ def _test():
     dtype = dtypes[args.dtype]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    block_shape = (args.block_size,) * (args.dimensions - 1)
+    block_shape = (args.block_size,) * (args.dimensions - 2)
     print(block_shape)
     compressor = Compressor(
         block_shape=block_shape,
@@ -58,11 +58,12 @@ def _test():
         mean_subtraction = 0
         compressed_mean_subtraction = 0
         for i in range(0, x.size()[0]):
-            compressed_x = compressor.compress(x[i])
-            compressed_y = compressor.compress(y[i])
+            for j in range(0, x.size()[1]):
+                compressed_x = compressor.compress(x[i, j, :])
+                compressed_y = compressor.compress(y[i, j, :])
 
-            mean_subtraction += abs(x[i].mean() - y[i].mean())
-            compressed_mean_subtraction += abs(compressed_y.mean() - compressed_x.mean())
+                mean_subtraction += abs(x[i, j, :].mean() - y[i, j, :].mean())
+                compressed_mean_subtraction += abs(compressed_y.mean() - compressed_x.mean())
         difference = abs(mean_subtraction - compressed_mean_subtraction)
 
         results.append(torch.mean(mean_subtraction))
