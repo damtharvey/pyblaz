@@ -213,6 +213,35 @@ class CompressedTensor:
                 / torch.prod(torch.tensor(self.block_shape) ** 0.5)
             )
 
+    def mean_blockwise(self) -> torch.tensor:
+        """
+        :returns: the arithmetic mean of the compressed tensor.
+        """
+
+        first_coefficients_sum = (
+            self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
+            * self.biggest_coefficients
+            / INDICES_RADIUS[self.indicess.dtype]
+        )
+
+        if not torch.isnan(first_coefficients_sum).any():
+
+            return (
+                first_coefficients_sum
+                / torch.prod(torch.tensor(self.blocks_shape))
+                / torch.prod(torch.tensor(self.block_shape) ** 0.5)
+            )
+        else:
+            return (
+                (
+                    self.biggest_coefficients
+                    / INDICES_RADIUS[self.indicess.dtype]
+                    * self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
+                )
+                / torch.prod(torch.tensor(self.blocks_shape))
+                / torch.prod(torch.tensor(self.block_shape) ** 0.5)
+            )
+
     def variance(self, sample: bool = False) -> float:
         """
         :param sample: whether to return the sample variance

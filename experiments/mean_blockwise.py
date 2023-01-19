@@ -37,8 +37,8 @@ def _test():
     dtype = dtypes[args.dtype]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    block_shape = (args.block_size,) * (args.dimensions - 2)
-    print(block_shape)
+    block_shape = (args.block_size,) * (args.dimensions)
+
     compressor = Compressor(
         block_shape=block_shape,
         dtype=dtype,
@@ -53,37 +53,15 @@ def _test():
         results = [size]
         x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
         y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
-        mean_x = []
-        mean_y = []
-        # compress
-        mean_subtraction = 0
-        compressed_mean_subtraction = 0
-        for i in range(0, x.size()[0]):
-            for j in range(0, x.size()[1]):
-                compressed_x = compressor.compress(x[i, j, :])
-                compressed_y = compressor.compress(y[i, j, :])
-                mean_x.append(compressed_x.mean())
-                mean_y.append(compressed_y.mean())
-                mean_subtraction += abs(x[i, j, :].mean() - y[i, j, :].mean())
-                compressed_mean_subtraction += abs(compressed_y.mean() - compressed_x.mean())
-        difference = abs(mean_subtraction - compressed_mean_subtraction)
-        # print(mean_x)
-        # print(mean_y)
-        results.append(torch.mean(mean_subtraction))
-        results.append(torch.mean(compressed_mean_subtraction))
-        results.append(torch.mean(difference))
-        table.append(results)
-    print(
-        tabulate(
-            table,
-            headers=(
-                "size",
-                "mean difference",
-                "compressed mean difference",
-                "difference between mean and compressed mean",
-            ),
-        )
-    )
+        compressed_x = compressor.compress(x)
+        compressed_y = compressor.compress(y)
+
+        compressed_x_mean = compressed_x.mean_blockwise()
+        compressed_y_mean = compressed_y.mean_blockwise()
+        # x_mean = x.mean_blockwise()
+    print(compressed_x_mean - compressed_y_mean)
+    print(x.size(), compressed_x_mean.size())
+    print(x.mean() - y.mean())
 
 
 if __name__ == "__main__":
