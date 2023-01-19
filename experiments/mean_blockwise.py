@@ -59,9 +59,32 @@ def _test():
         compressed_x_mean = compressed_x.mean_blockwise()
         compressed_y_mean = compressed_y.mean_blockwise()
         # x_mean = x.mean_blockwise()
-    print(compressed_x_mean - compressed_y_mean)
-    print(x.size(), compressed_x_mean.size())
-    print(x.mean() - y.mean())
+        size_x = compressed_x_mean.size()
+        product_x = size_x[0] * size_x[1] * size_x[2]
+        results.append(compressed_x_mean.size())
+        results.append(x.mean())
+        results.append(compressed_x_mean.sum() / product_x)
+
+        size_y = compressed_y_mean.size()
+        product_y = size_y[0] * size_y[1] * size_y[2]
+        # results.append(compressed_y_mean.size())
+        results.append(y.mean())
+        results.append(compressed_y_mean.sum() / product_y)
+        table.append(results)
+
+    print(
+        tabulate(
+            table,
+            headers=(
+                "size",
+                "mean arr size",
+                "x.mean()",
+                "comp_x_mean.sum()/prod",
+                "y.mean()",
+                "comp_y_mean.sum()/prod",
+            ),
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -225,22 +225,14 @@ class CompressedTensor:
         )
 
         if not torch.isnan(first_coefficients_sum).any():
-
-            return (
-                first_coefficients_sum
-                / torch.prod(torch.tensor(self.blocks_shape))
-                / torch.prod(torch.tensor(self.block_shape) ** 0.5)
-            )
-        else:
-            return (
-                (
-                    self.biggest_coefficients
-                    / INDICES_RADIUS[self.indicess.dtype]
-                    * self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
-                )
-                / torch.prod(torch.tensor(self.blocks_shape))
-                / torch.prod(torch.tensor(self.block_shape) ** 0.5)
-            )
+            return first_coefficients_sum / torch.prod(torch.tensor(self.block_shape) ** 0.5)
+        # since we are not taking the summ the else is not possible
+        # else:
+        #     return (
+        #         self.biggest_coefficients
+        #         / INDICES_RADIUS[self.indicess.dtype]
+        #         * self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
+        #     ) / torch.prod(torch.tensor(self.block_shape) ** 0.5)
 
     def variance(self, sample: bool = False) -> float:
         """
