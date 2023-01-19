@@ -223,9 +223,11 @@ class CompressedTensor:
             * self.biggest_coefficients
             / INDICES_RADIUS[self.indicess.dtype]
         )
+        return first_coefficients_sum / torch.prod(torch.tensor(self.block_shape) ** 0.5)
 
-        if not torch.isnan(first_coefficients_sum).any():
-            return first_coefficients_sum / torch.prod(torch.tensor(self.block_shape) ** 0.5)
+        # if not torch.isnan(first_coefficients_sum).any():
+        # return first_coefficients_sum / torch.prod(torch.tensor(self.block_shape) ** 0.5)
+
         # since we are not taking the summ the else is not possible
         # else:
         #     return (
