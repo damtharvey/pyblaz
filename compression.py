@@ -90,6 +90,7 @@ def _test():
 
         # compressed mean
         _ = compressed_x.mean()
+
         results.append(abs(compressed_x.mean() - x.mean()))
 
         # compressed variance

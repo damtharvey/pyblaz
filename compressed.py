@@ -215,7 +215,7 @@ class CompressedTensor:
 
     def mean_blockwise(self) -> torch.tensor:
         """
-        :returns: the arithmetic mean of the compressed tensor.
+        :returns: the blockwise mean of the compressed tensor.
         """
 
         first_coefficients_sum = (
@@ -254,6 +254,36 @@ class CompressedTensor:
         coefficientss[..., 0] -= coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
 
         variance = (coefficientss**2).mean()
+        if sample:
+            return variance * (n_elements := torch.prod(torch.tensor(self.original_shape))) / (n_elements - 1)
+        else:
+            return variance
+
+    def blockwise_variance(self, sample: bool = False) -> torch.Tensor:
+        """
+        :param sample: whether to return the sample variance
+        :returns: the blockwise variance matrix of the  compressed tensor
+        """
+        coefficientss = (
+            self.indicess.type(self.biggest_coefficients.dtype)
+            * self.biggest_coefficients[..., None]
+            / INDICES_RADIUS[self.indicess.dtype]
+        )
+        if coefficientss.isnan().any():
+            coefficientss = (
+                self.biggest_coefficients[..., None]
+                / INDICES_RADIUS[self.indicess.dtype]
+                * self.indicess.type(self.biggest_coefficients.dtype)
+            )
+
+        coefficientss[..., 0] -= coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
+        shape = coefficientss.shape
+        variance = torch.zeros([shape[0], shape[1], shape[2]], dtype=self.biggest_coefficients.dtype)
+
+        for i in range(shape[0]):
+            for j in range(shape[1]):
+                for k in range(shape[2]):
+                    variance[i, j, k] = (coefficientss[i, j, k, :] ** 2).mean()
 
         if sample:
             return variance * (n_elements := torch.prod(torch.tensor(self.original_shape))) / (n_elements - 1)
