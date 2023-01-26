@@ -1,5 +1,5 @@
 import torch
-
+import math
 
 INDICES_RADIUS = {
     torch.int8: (1 << 7) - 1,
@@ -259,6 +259,9 @@ class CompressedTensor:
         else:
             return variance
 
+    def standard_deviation(self, sample: bool = False) -> float:
+        return math.sqrt(self.variance)
+
     def blockwise_variance(self, sample: bool = False) -> torch.Tensor:
         """
         :param sample: whether to return the sample variance
@@ -284,6 +287,9 @@ class CompressedTensor:
             return variance * (n_elements := torch.prod(torch.tensor(self.original_shape))) / (n_elements - 1)
         else:
             return variance
+
+    def blockwise_standard_deviation(self, sample: bool = False) -> torch.Tensor:
+        return torch.sqrt(self.blockwise_variance)
 
 
 if __name__ == "__main__":
