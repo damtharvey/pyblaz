@@ -277,13 +277,8 @@ class CompressedTensor:
             )
 
         coefficientss[..., 0] -= coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
-        shape = coefficientss.shape
-        variance = torch.zeros([shape[0], shape[1], shape[2]], dtype=self.biggest_coefficients.dtype)
 
-        for i in range(shape[0]):
-            for j in range(shape[1]):
-                for k in range(shape[2]):
-                    variance[i, j, k] = (coefficientss[i, j, k, :] ** 2).mean()
+        variance = (coefficientss**2).mean(axis=3)
 
         if sample:
             return variance * (n_elements := torch.prod(torch.tensor(self.original_shape))) / (n_elements - 1)
