@@ -261,7 +261,7 @@ class CompressedTensor:
     def standard_deviation(self, sample: bool = False) -> float:
         return self.variance(sample) ** 0.5
 
-    def blockwise_variance(self, sample: bool = False) -> torch.Tensor:
+    def variance_blockwise(self, sample: bool = False) -> torch.Tensor:
         """
         :param sample: whether to return the sample variance
         :returns: the blockwise variance matrix of the  compressed tensor
@@ -281,12 +281,12 @@ class CompressedTensor:
         variance = (coefficientss**2).mean(-1)
 
         if sample:
-            return variance * (n_elements := torch.prod(torch.tensor(self.original_shape))) / (n_elements - 1)
+            return variance * (n_elements := torch.prod(torch.tensor(self.block_shape))) / (n_elements - 1)
         else:
             return variance
 
     def blockwise_standard_deviation(self, sample: bool = False) -> torch.Tensor:
-        return self.blockwise_variance(sample) ** 0.5
+        return self.variance_blockwise(sample) ** 0.5
 
 
 if __name__ == "__main__":
