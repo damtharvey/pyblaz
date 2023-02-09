@@ -11,8 +11,8 @@ def _test():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--dimensions", type=int, default=1)
-    parser.add_argument("--block-size", type=int, default=4, help="size of a hypercubic block")
-    parser.add_argument("--max-size", type=int, default=512)
+    parser.add_argument("--block-size", type=int, default=8, help="size of a hypercubic block")
+    parser.add_argument("--max-size", type=int, default=2048)
     parser.add_argument(
         "--dtype",
         type=str,
@@ -51,38 +51,28 @@ def _test():
         desc=f"time {args.dimensions}D",
     ):
         results = [size]
-        x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
+        x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device) * 17
         y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
 
         blocks_x = compressor.block(x)
 
-        p = torch.zeros(blocks_x.shape)
-        x1 = torch.zeros(p.shape)
-        x2 = torch.zeros(p.shape)
-        x3 = torch.zeros(p.shape)
+        x1 = torch.zeros(blocks_x.shape)
+        x2 = torch.zeros(blocks_x.shape)
+        x3 = torch.zeros(blocks_x.shape)
+
         for k in range(blocks_x.shape[0]):
             for l in range(blocks_x.shape[1]):
-                if l == 0 or k == 0:
-                    p[k, l] = p[k, l]
-                else:
-                    p[k, l] = blocks_x[k][l - 1] + blocks_x[k - 1][l] - blocks_x[k - 1][l - 1]
-        for k in range(p.shape[0]):
-            for l in range(p.shape[1]):
                 if l == 0:
-                    x1[k, l] = p[k, l]
+                    x1[k, l] = blocks_x[k, l]
                 else:
                     x1[k, l] = x1[k, l - 1]
 
-        for k in range(p.shape[0]):
-            for l in range(p.shape[1]):
                 if l == 0 or l == 1:
-                    x2[k, l] = p[k, l]
+                    x2[k, l] = blocks_x[k, l]
                 else:
                     x2[k, l] = (2.0 * x2[k, l - 1]) - x2[k, l - 2]
-        for k in range(p.shape[0]):
-            for l in range(p.shape[1]):
                 if l == 0 or l == 1 or l == 2:
-                    x3[k, l] = p[k, l]
+                    x3[k, l] = blocks_x[k, l]
                 else:
                     x3[k, l] = (3.0 * x3[k, l - 1]) - (3.0 * x3[k, l - 2]) + x3[k, l - 3]
 
@@ -91,7 +81,7 @@ def _test():
         diff3 = blocks_x - x3
         predictor = []
         elemenated_block_numbers = []
-        max_error = 0.1
+        max_error = 0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001
         for i in range(len(diff1)):
             list = [
                 diff1[i, :].sum(),
