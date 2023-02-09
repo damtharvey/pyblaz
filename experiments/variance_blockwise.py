@@ -56,8 +56,8 @@ def _test():
         compressed_x = compressor.compress(x)
         compressed_y = compressor.compress(y)
 
-        compressed_x_mean = compressed_x.blockwise_variance()
-        compressed_y_mean = compressed_y.blockwise_variance()
+        compressed_x_mean = compressed_x.variance_blockwise()
+        compressed_y_mean = compressed_y.variance_blockwise()
         # x_mean = x.mean_blockwise()
         size_x = compressed_x_mean.size()
         product_x = size_x[0] * size_x[1] * size_x[2]
