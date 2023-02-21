@@ -2,6 +2,13 @@ from compression import Compressor
 
 import tqdm
 import torch
+import numpy as np
+
+
+def softmax(x):
+    """Compute softmax values for each sets of scores in x."""
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum()
 
 
 def _test():
@@ -53,28 +60,35 @@ def _test():
         results = [size]
         x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
         y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
+
         compressed_x = compressor.compress(x)
         compressed_y = compressor.compress(y)
-        diff = (((x - y) ** 2).sum()) ** (0.5)
-        compress_diff = ((compressor.decompress(compressed_x - compressed_y) ** 2).sum()) ** (0.5)
 
         compressed_x_mean = compressed_x.mean_blockwise()
         compressed_y_mean = compressed_y.mean_blockwise()
 
-        size_x = compressed_x_mean.size()
-        product_x = size_x[0] * size_x[1] * size_x[2]
-        size_y = compressed_y_mean.size()
-        product_y = size_y[0] * size_y[1] * size_y[2]
+        softmax_compressed_x_mean = softmax(np.asarray(compressed_x_mean))
+        softmax_compressed_y_mean = softmax(np.asarray(compressed_y_mean))
 
-        compress_diff_mean = (
-            ((compressed_x_mean.sum() / product_x - compressed_y_mean.sum() / product_y) ** 2).sum()
-        ) ** (0.5)
-        diff_mean = (((x.mean() - y.mean()) ** 2).sum()) ** (0.5)
+        softmax_x = softmax(np.asarray(x))
+        softmax_y = softmax(np.asarray(y))
+
+        order = 3
+        wass_distance_compressed = [
+            (((abs(a - b)) ** order) ** (1 / order)).mean()
+            for a, b in zip(softmax_compressed_x_mean, softmax_compressed_y_mean)
+        ]
+
+        wass_distance = [(((abs(a - b)) ** order) ** (1 / order)).mean() for a, b in zip(softmax_x, softmax_y)]
+        diff = np.mean(wass_distance)
+        compress_diff_mean = np.mean(wass_distance_compressed)
+
+        # diff_mean = (((x.mean() - y.mean()) ** 2).sum()) ** (0.5)
 
         results.append(diff)
-        results.append(compress_diff)
+        # results.append(compress_diff)
 
-        results.append(diff_mean)
+        # results.append(diff_mean)
         results.append(compress_diff_mean)
         table.append(results)
     print(
@@ -83,9 +97,7 @@ def _test():
             headers=(
                 "size",
                 "wass diff",
-                "wass compress_diff",
-                "wass diff_mean",
-                "wass compress_diff_mean",
+                "wass compress_diff blockwise mean",
             ),
         )
     )

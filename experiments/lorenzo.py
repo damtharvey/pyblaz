@@ -51,7 +51,7 @@ def _test():
         desc=f"time {args.dimensions}D",
     ):
         results = [size]
-        x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device) * 17
+        x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
         y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
 
         blocks_x = compressor.block(x)
