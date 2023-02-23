@@ -82,6 +82,12 @@ for l in range(0, len(list) - 1):
     softmax_x = softmax(np.asarray(a))
     softmax_y = softmax(np.asarray(b))
 
+    sorted_softmax_compressed_x_mean = np.sort(softmax_compressed_x_mean)
+    sorted_softmax_compressed_y_mean = np.sort(softmax_compressed_y_mean)
+
+    sorted_softmax_x = np.sort(softmax_x)
+    sorted_softmax_y = np.sort(softmax_y)
+
     order = 65
     wass_distance_compressed = [
         (((abs(a - b)) ** order) ** (1 / order)).mean()

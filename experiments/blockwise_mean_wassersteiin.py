@@ -73,13 +73,22 @@ def _test():
         softmax_x = softmax(np.asarray(x))
         softmax_y = softmax(np.asarray(y))
 
+        sorted_softmax_compressed_x_mean = np.sort(softmax_compressed_x_mean)
+        sorted_softmax_compressed_y_mean = np.sort(softmax_compressed_y_mean)
+
+        sorted_softmax_x = np.sort(softmax_x)
+        sorted_softmax_y = np.sort(softmax_y)
+
         order = 3
+
         wass_distance_compressed = [
             (((abs(a - b)) ** order) ** (1 / order)).mean()
-            for a, b in zip(softmax_compressed_x_mean, softmax_compressed_y_mean)
+            for a, b in zip(sorted_softmax_compressed_x_mean, sorted_softmax_compressed_y_mean)
         ]
 
-        wass_distance = [(((abs(a - b)) ** order) ** (1 / order)).mean() for a, b in zip(softmax_x, softmax_y)]
+        wass_distance = [
+            (((abs(a - b)) ** order) ** (1 / order)).mean() for a, b in zip(sorted_softmax_x, sorted_softmax_y)
+        ]
         diff = np.mean(wass_distance)
         compress_diff_mean = np.mean(wass_distance_compressed)
 
