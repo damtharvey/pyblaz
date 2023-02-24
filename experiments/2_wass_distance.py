@@ -71,8 +71,10 @@ def _test():
         compressed_x_mean = compressed_x.mean_blockwise()
         compressed_y_mean = compressed_y.mean_blockwise()
 
-        compressed_x_variance = compressed_x.variance_blockwise()
-        compressed_y_variance = compressed_y.variance_blockwise()
+        compressed_x_variance = compressed_x.blockwise_standard_deviation()
+        compressed_y_variance = compressed_y.blockwise_standard_deviation()
+
+        # flatten
 
         softmax_compressed_x_mean = softmax(np.asarray(compressed_x_mean))
         softmax_compressed_y_mean = softmax(np.asarray(compressed_y_mean))
