@@ -71,8 +71,8 @@ def _test():
         compressed_x_mean = compressed_x.mean_blockwise()
         compressed_y_mean = compressed_y.mean_blockwise()
 
-        compressed_x_variance = compressed_x.blockwise_standard_deviation()
-        compressed_y_variance = compressed_y.blockwise_standard_deviation()
+        compressed_x_variance = compressed_x.standard_deviation_blockwise()
+        compressed_y_variance = compressed_y.standard_deviation_blockwise()
 
         # flatten
 

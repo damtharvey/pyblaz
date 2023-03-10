@@ -233,23 +233,44 @@ class CompressedTensor:
                 * self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
             ) / torch.prod(torch.tensor(self.block_shape) ** 0.5)
 
+    def covariance(self, other, sample: bool = False) -> float:
+        """
+        :param other: other CompressedTensor to return covariance with
+        :param sample: whether to return the sample covariance
+        :returns: the covariance of this CompressedTensor with another
+        """
+        assert torch.equal(self.mask, other.mask), "Masks must match between tensors to get covariance...for now."
+
+        coefficientss = self._coefficients_blocks()
+
+        other_coefficientss = (
+                other.indicess.type(other.biggest_coefficients.dtype)
+                * other.biggest_coefficients[..., None]
+                / INDICES_RADIUS[other.indicess.dtype]
+        )
+        if other_coefficientss.isnan().any():
+            other_coefficientss = (
+                    other.biggest_coefficients[..., None]
+                    / INDICES_RADIUS[other.indicess.dtype]
+                    * other.indicess.type(other.biggest_coefficients.dtype)
+            )
+
+        coefficientss[..., 0] -= coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
+        other_coefficientss[..., 0] -= other_coefficientss[..., 0].sum() / torch.prod(torch.tensor(other.blocks_shape))
+
+        covariance = (coefficientss * other_coefficientss).mean()
+        if sample:
+            return covariance * (n_elements := torch.prod(torch.tensor(self.original_shape))) / (n_elements - 1)
+        else:
+            return covariance
+
     def variance(self, sample: bool = False) -> float:
         """
         :param sample: whether to return the sample variance
         :returns: the variance of the compressed tensor
         """
-        coefficientss = (
-            self.indicess.type(self.biggest_coefficients.dtype)
-            * self.biggest_coefficients[..., None]
-            / INDICES_RADIUS[self.indicess.dtype]
-        )
-        if coefficientss.isnan().any():
-            coefficientss = (
-                self.biggest_coefficients[..., None]
-                / INDICES_RADIUS[self.indicess.dtype]
-                * self.indicess.type(self.biggest_coefficients.dtype)
-            )
-
+        # Faster than self.covariance(self)
+        coefficientss = self._coefficients_blocks()
         coefficientss[..., 0] -= coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
 
         variance = (coefficientss**2).mean()
@@ -266,18 +287,7 @@ class CompressedTensor:
         :param sample: whether to return the sample variance
         :returns: the blockwise variance matrix of the  compressed tensor
         """
-        coefficientss = (
-            self.indicess.type(self.biggest_coefficients.dtype)
-            * self.biggest_coefficients[..., None]
-            / INDICES_RADIUS[self.indicess.dtype]
-        )
-        if coefficientss.isnan().any():
-            coefficientss = (
-                self.biggest_coefficients[..., None]
-                / INDICES_RADIUS[self.indicess.dtype]
-                * self.indicess.type(self.biggest_coefficients.dtype)
-            )
-
+        coefficientss = self._coefficients_blocks()
         variance = (coefficientss**2).mean(-1)
 
         if sample:
@@ -285,8 +295,22 @@ class CompressedTensor:
         else:
             return variance
 
-    def blockwise_standard_deviation(self, sample: bool = False) -> torch.Tensor:
+    def standard_deviation_blockwise(self, sample: bool = False) -> torch.Tensor:
         return self.variance_blockwise(sample) ** 0.5
+
+    def _coefficients_blocks(self) -> torch.Tensor:
+        coefficients_blocks = (
+                self.indicess.type(self.biggest_coefficients.dtype)
+                * self.biggest_coefficients[..., None]
+                / INDICES_RADIUS[self.indicess.dtype]
+        )
+        if coefficients_blocks.isnan().any():
+            coefficients_blocks = (
+                    self.biggest_coefficients[..., None]
+                    / INDICES_RADIUS[self.indicess.dtype]
+                    * self.indicess.type(self.biggest_coefficients.dtype)
+            )
+        return coefficients_blocks
 
 
 if __name__ == "__main__":
