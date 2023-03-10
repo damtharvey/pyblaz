@@ -43,6 +43,24 @@ class CompressedTensor:
     def block_shape(self) -> tuple[int, ...]:
         return self.mask.shape
 
+    @property
+    def coefficientss(self) -> torch.Tensor:
+        """
+        :returns: coefficient blocks of the compressed tensor, obtained through partial decompression
+        """
+        coefficients_blocks = (
+            self.indicess.type(self.biggest_coefficients.dtype)
+            * self.biggest_coefficients[..., None]
+            / INDICES_RADIUS[self.indicess.dtype]
+        )
+        if coefficients_blocks.isnan().any():
+            coefficients_blocks = (
+                self.biggest_coefficients[..., None]
+                / INDICES_RADIUS[self.indicess.dtype]
+                * self.indicess.type(self.biggest_coefficients.dtype)
+            )
+        return coefficients_blocks
+
     def __getitem__(self, item: tuple[int, ...] or int) -> CompressedBlock:
         """
         :returns: compressed block at the indices
@@ -241,24 +259,13 @@ class CompressedTensor:
         """
         assert torch.equal(self.mask, other.mask), "Masks must match between tensors to get covariance...for now."
 
-        coefficientss = self._coefficients_blocks()
+        self_coefficientss = self.coefficientss
+        other_coefficientss = other.coefficientss
 
-        other_coefficientss = (
-                other.indicess.type(other.biggest_coefficients.dtype)
-                * other.biggest_coefficients[..., None]
-                / INDICES_RADIUS[other.indicess.dtype]
-        )
-        if other_coefficientss.isnan().any():
-            other_coefficientss = (
-                    other.biggest_coefficients[..., None]
-                    / INDICES_RADIUS[other.indicess.dtype]
-                    * other.indicess.type(other.biggest_coefficients.dtype)
-            )
-
-        coefficientss[..., 0] -= coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
+        self_coefficientss[..., 0] -= self_coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
         other_coefficientss[..., 0] -= other_coefficientss[..., 0].sum() / torch.prod(torch.tensor(other.blocks_shape))
 
-        covariance = (coefficientss * other_coefficientss).mean()
+        covariance = (self_coefficientss * other_coefficientss).mean()
         if sample:
             return covariance * (n_elements := torch.prod(torch.tensor(self.original_shape))) / (n_elements - 1)
         else:
@@ -270,7 +277,7 @@ class CompressedTensor:
         :returns: the variance of the compressed tensor
         """
         # Faster than self.covariance(self)
-        coefficientss = self._coefficients_blocks()
+        coefficientss = self.coefficientss
         coefficientss[..., 0] -= coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
 
         variance = (coefficientss**2).mean()
@@ -282,12 +289,64 @@ class CompressedTensor:
     def standard_deviation(self, sample: bool = False) -> float:
         return self.variance(sample) ** 0.5
 
+    def structural_similarity(
+        self,
+        other,
+        luminance_weight: float = 1,
+        contrast_weight: float = 1,
+        structure_weight: float = 1,
+        dynamic_range: float = 0,
+        luminance_stabilization: float = 0.01,
+        contrast_stabilization: float = 0.03,
+    ) -> float:
+        """
+        Return the structural similarity index between compressed tensors.
+
+        This was originally intended for measuring visual similarity between images.
+        This is an extension to floating point arrays.
+
+        :param other: compressed tensor to compare with
+        :param luminance_weight: weight on mean measures
+        :param contrast_weight: weight on variance measures
+        :param structure_weight: weight on covariance measures
+        :param dynamic_range: originally the maximum pixel value.
+                              Probably most useful if you know the range of the uncompressed arrays beforehand.
+        :param luminance_stabilization: luminance stabilization hyperparameter
+        :param contrast_stabilization: contrast stabilization hyperparameter
+        :returns: structural similarity index between compressed tensors.
+        """
+        self_mean = self.mean()
+        other_mean = other.mean()
+        self_variance = self.variance()
+        other_variance = other.variance()
+        covariance = self.covariance(other)
+
+        luminance_stabilizer = luminance_stabilization * dynamic_range
+        contrast_stabilizer = contrast_stabilization * dynamic_range
+        similarity_stabilizer = contrast_stabilizer / 2
+
+        luminance_similarity = (2 * self_mean * other_mean + luminance_stabilizer) / (
+            self_mean**2 + other_mean**2 + luminance_stabilizer
+        )
+        contrast_similarity = (2 * self_variance * other_variance + contrast_stabilizer) / (
+            self_variance**2 + other_variance**2 + contrast_stabilizer
+        )
+        structure_similarity = (covariance + similarity_stabilizer) / (
+            self_variance * other_variance + similarity_stabilizer
+        )
+
+        return (
+            luminance_similarity**luminance_weight
+            + contrast_similarity**contrast_weight
+            + structure_similarity**structure_weight
+        )
+
     def variance_blockwise(self, sample: bool = False) -> torch.Tensor:
         """
         :param sample: whether to return the sample variance
         :returns: the blockwise variance matrix of the  compressed tensor
         """
-        coefficientss = self._coefficients_blocks()
+        coefficientss = self.coefficientss
         variance = (coefficientss**2).mean(-1)
 
         if sample:
@@ -297,20 +356,6 @@ class CompressedTensor:
 
     def standard_deviation_blockwise(self, sample: bool = False) -> torch.Tensor:
         return self.variance_blockwise(sample) ** 0.5
-
-    def _coefficients_blocks(self) -> torch.Tensor:
-        coefficients_blocks = (
-                self.indicess.type(self.biggest_coefficients.dtype)
-                * self.biggest_coefficients[..., None]
-                / INDICES_RADIUS[self.indicess.dtype]
-        )
-        if coefficients_blocks.isnan().any():
-            coefficients_blocks = (
-                    self.biggest_coefficients[..., None]
-                    / INDICES_RADIUS[self.indicess.dtype]
-                    * self.indicess.type(self.biggest_coefficients.dtype)
-            )
-        return coefficients_blocks
 
 
 if __name__ == "__main__":
