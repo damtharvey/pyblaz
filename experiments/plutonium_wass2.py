@@ -75,17 +75,17 @@ for l in range(0, len(list) - 1):
     dtype = torch.float64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    compressor = Compressor(block_shape=(8, 8), dtype=dtype, device=device)
+    compressor = Compressor(block_shape=(32, 32), dtype=dtype, device=device)
 
     a = torch.FloatTensor(final_list0)
     b = torch.FloatTensor(final_list1)
-
+    print(a.shape)
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
 
     compressed_x_mean = compressed_a.mean_blockwise()
     compressed_y_mean = compressed_b.mean_blockwise()
-
+    print(compressed_x_mean.shape)
     compressed_x_variance = compressed_a.variance_blockwise()
     compressed_y_variance = compressed_b.variance_blockwise()
 
@@ -126,9 +126,9 @@ for l in range(0, len(list) - 1):
     )
 
     list_result.append(
-        np.mean(wass_distance_compressed),
+        wass_distance_compressed,
     )
 print(list_result)
 print(max(list_result))
-plt.plot(list[:-1], list_result)
+plt.plot(list[:-1], list_result, label="2-Wasserstein")
 plt.show()
