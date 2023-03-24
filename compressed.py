@@ -319,6 +319,8 @@ class CompressedTensor:
         other_mean = other.mean()
         self_variance = self.variance()
         other_variance = other.variance()
+        self_standard_deviation = self_variance**0.5
+        other_standard_deviation = other_variance**0.5
         covariance = self.covariance(other)
 
         luminance_stabilizer = luminance_stabilization * dynamic_range
@@ -328,11 +330,11 @@ class CompressedTensor:
         luminance_similarity = (2 * self_mean * other_mean + luminance_stabilizer) / (
             self_mean**2 + other_mean**2 + luminance_stabilizer
         )
-        contrast_similarity = (2 * self_variance * other_variance + contrast_stabilizer) / (
-            self_variance**2 + other_variance**2 + contrast_stabilizer
+        contrast_similarity = (2 * self_standard_deviation * other_standard_deviation + contrast_stabilizer) / (
+            self_variance + other_variance + contrast_stabilizer
         )
         structure_similarity = (covariance + similarity_stabilizer) / (
-            self_variance * other_variance + similarity_stabilizer
+            self_standard_deviation * other_standard_deviation + similarity_stabilizer
         )
 
         return (
