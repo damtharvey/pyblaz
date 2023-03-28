@@ -7,6 +7,7 @@ import torch
 import tqdm
 
 import compression
+import experiments.structural_similarity_time as ssim
 
 
 class Channel:
@@ -85,8 +86,10 @@ def main():
                         f"norm_2,"
                         f"{flair.norm(2) - compressed_flair.norm_2()}"
                     )
+
     with open(results_path / "mri_metrics.csv", "w") as file:
         file.write("\n".join(to_write))
+
 
 
 if __name__ == "__main__":

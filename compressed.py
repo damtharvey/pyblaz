@@ -339,8 +339,8 @@ class CompressedTensor:
 
         return (
             luminance_similarity**luminance_weight
-            + contrast_similarity**contrast_weight
-            + structure_similarity**structure_weight
+            * contrast_similarity**contrast_weight
+            * structure_similarity**structure_weight
         )
 
     def variance_blockwise(self, sample: bool = False) -> torch.Tensor:
