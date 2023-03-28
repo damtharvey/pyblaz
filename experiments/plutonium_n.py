@@ -7,6 +7,8 @@ import os
 import torch
 
 list = [665, 670, 675, 680, 686, 687, 689, 690, 692, 693, 694, 695, 699]
+compressed_subtraction = []
+subtraction = []
 print("timestamp, difference, subtraction, (de)compressed subtraction")
 for l in range(0, len(list) - 1):
 
@@ -54,13 +56,61 @@ for l in range(0, len(list) - 1):
     dtype = torch.float64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    compressor = Compressor(block_shape=(8, 8), dtype=dtype, device=device)
+    compressor = Compressor(block_shape=(16, 8), dtype=dtype, device=device)
 
     a = torch.FloatTensor(final_list0)
     b = torch.FloatTensor(final_list1)
     compressed_a = compressor.compress(a)
     compressed_b = compressor.compress(b)
-    subtraction = abs(a - b)
-    compressed_subtraction = abs(compressor.decompress(compressed_b - compressed_a))
-    difference = abs(subtraction - compressed_subtraction)
-    print(str(list[l]), torch.mean(difference), torch.mean(subtraction), torch.mean(compressed_subtraction))
+    subtraction.append(abs(a - b))
+    compressed_subtraction.append(abs(compressor.decompress(compressed_b - compressed_a)))
+    # difference.append(abs(subtraction - compressed_subtraction))
+
+    # print(str(list[l]), torch.mean(difference), torch.mean(subtraction), torch.mean(compressed_subtraction))
+plt.xlabel("timestep")
+plt.ylabel("L2 norm value")
+plt.title("L2 norm difference for each timestep for n-density of Pu atom")
+# plt.xticks(
+#     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+#     [
+#         "665",
+#         "670",
+#         "675",
+#         "680",
+#         "686",
+#         "687",
+#         "689",
+#         "690",
+#         "692",
+#         "693",
+#         "694",
+#         "695",
+#         "699",
+#     ],
+# )
+plt.plot(list[:-1], subtraction)
+
+# plt.xticks(
+#     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+#     [
+#         "665",
+#         "670",
+#         "675",
+#         "680",
+#         "686",
+#         "687",
+#         "689",
+#         "690",
+#         "692",
+#         "693",
+#         "694",
+#         "695",
+#         "699",
+#     ],
+# )
+
+plt.plot(list[:-1], compressed_subtraction)
+plt.legend()
+plt.savefig("L2norm_n.png")
+plt.show()
+plt.close()

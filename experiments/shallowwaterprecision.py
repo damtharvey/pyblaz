@@ -1,9 +1,11 @@
 from compression import Compressor
 import matplotlib.pyplot as plt
-
+import structural_similarity
 import torch
 import numpy as np
 import time
+
+from matplotlib.pyplot import figure
 
 
 def softmax(x):
@@ -23,20 +25,18 @@ eta2 = np.load("./data/ShallowWatersPrecisionData/Float32/eta.npz")
 sst2 = np.load("./data/ShallowWatersPrecisionData/Float32/sst.npz")
 
 fig, axs = plt.subplots(2, 2)
+cmap = plt.get_cmap("PiYG")
 
+pc00 = axs[0, 0].pcolormesh(eta, cmap=cmap)
+axs[0, 0].set_title("height for float16 precision data")
 
-axs[0, 0].pcolormesh(eta)
-axs[0, 0].set_title("eta for float 16")
+pc01 = axs[0, 1].pcolormesh(eta2, cmap=cmap)
 
-axs[0, 1].pcolormesh(eta2)
-axs[0, 1].set_title("eta for float 32")
+axs[0, 1].set_title("height for float32 precision data")
 
-
-axs[1, 0].pcolormesh(abs(eta - eta2), cmap=plt.cm.Greys)
-axs[1, 0].set_title("difference for uncompressed etas")
-# print(eta - eta2)
-# plt.pcolormesh(sst)
-# plt.show()
+cmap = plt.get_cmap("PiYG")
+pc10 = axs[1, 0].pcolormesh(abs(eta - eta2), cmap=cmap)
+axs[1, 0].set_title("difference of float16 vs float32 for compressed heights")
 
 dtype = torch.float32
 
@@ -46,13 +46,21 @@ compressor = Compressor(block_shape=(2, 2), dtype=dtype, device=device)
 a = torch.FloatTensor(eta)
 b = torch.FloatTensor(eta2)
 
+
 compressed_a = compressor.compress(a)
 compressed_b = compressor.compress(b)
 
-diff = abs(compressor.decompress(compressed_a - compressed_b))
 
+diff = abs(compressor.decompress(compressed_a - compressed_b))
+# generate 2 2d grids for the x & y bounds
+print(eta)
 
 print(torch.mean(abs(diff - abs(eta - eta2))))
-axs[1, 1].pcolormesh(diff, cmap=plt.cm.Greys)
-axs[1, 1].set_title("difference for compressed etas")
+pc11 = axs[1, 1].pcolormesh(diff, cmap=cmap)
+
+axs[1, 1].set_title("difference of float16 vs float32 for compressed heights")
+plt.colorbar(pc00, ax=axs[0, 0])
+plt.colorbar(pc01, ax=axs[0, 1])
+plt.colorbar(pc10, ax=axs[1, 0])
+plt.colorbar(pc11, ax=axs[1, 1])
 plt.show()
