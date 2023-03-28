@@ -24,7 +24,7 @@ def main():
     )
     parser.add_argument("--keep-proportion", type=float, default=0.5)
     parser.add_argument("--results-path", type=str, default="results")
-    parser.add_argument("--experiment-name", type=str, default="time")
+    parser.add_argument("--experiment-name", type=str, default="time_ssim")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -41,7 +41,7 @@ def main():
         "float64": torch.float64,
     }
 
-    to_write = ["dimensions,dtype,size,block_size,compress,negate,add,multiply,dot,norm2,mean,variance,cosine_similarity,structural_similarity,decompress"]
+    to_write = ["dimensions,dtype,size,block_size,uncompressed_structural_similarity,compress,compressed_structural_similarity,decompress"]
 
     for dtype_str, dtype in dtypes.items():
         for dimensions in range(2, 5):
@@ -72,51 +72,16 @@ def main():
                             x = torch.rand((size,) * dimensions, dtype=dtype, device=device)
                             y = torch.rand((size,) * dimensions, dtype=dtype, device=device)
 
+                            # uncompressed ssim
+                            start_time = datetime.now()
+                            _ = structural_similarity(x, y)
+                            ssim = (datetime.now() - start_time).microseconds
+
                             # compress
                             start_time = datetime.now()
                             compressed_x = compressor.compress(x)
                             compressed_y = compressor.compress(y)
                             compress = ((datetime.now() - start_time) / 2).microseconds
-
-                            # compressed negate
-                            start_time = datetime.now()
-                            _ = -compressed_x
-                            compressed_negate = (datetime.now() - start_time).microseconds
-
-                            # compressed add
-                            start_time = datetime.now()
-                            _ = compressed_x + compressed_y
-                            compressed_add = (datetime.now() - start_time).microseconds
-
-                            # compressed multiply
-                            start_time = datetime.now()
-                            _ = compressed_x * 3.14159
-                            compressed_multiply = (datetime.now() - start_time).microseconds
-
-                            # compressed dot
-                            start_time = datetime.now()
-                            _ = compressed_x.dot(compressed_y)
-                            compressed_dot = (datetime.now() - start_time).microseconds
-
-                            # compressed norm2
-                            start_time = datetime.now()
-                            _ = compressed_x.norm_2()
-                            compressed_norm2 = (datetime.now() - start_time).microseconds
-
-                            # compressed mean
-                            start_time = datetime.now()
-                            _ = compressed_x.mean()
-                            compressed_mean = (datetime.now() - start_time).microseconds
-
-                            # compressed variance
-                            start_time = datetime.now()
-                            _ = compressed_x.variance()
-                            compressed_variance = (datetime.now() - start_time).microseconds
-
-                            # compressed cosine similarity
-                            start_time = datetime.now()
-                            _ = compressed_x.cosine_similarity(compressed_y)
-                            compressed_cosine_similarity = (datetime.now() - start_time).microseconds
 
                             # compressed structural similarity
                             start_time = datetime.now()
@@ -131,15 +96,8 @@ def main():
                             if run_number > 0:
                                 results.append(
                                     [
+                                        ssim,
                                         compress,
-                                        compressed_negate,
-                                        compressed_add,
-                                        compressed_multiply,
-                                        compressed_dot,
-                                        compressed_norm2,
-                                        compressed_mean,
-                                        compressed_variance,
-                                        compressed_cosine_similarity,
                                         compressed_structural_similarity,
                                         decompress,
                                     ]
@@ -149,10 +107,53 @@ def main():
                         to_write.append(f"{dimensions},{dtype_str},{size},{block_size}," + ",".join(str(int(number)) for number in results))
                     except torch.cuda.OutOfMemoryError:
                         to_write.append(
-                            f"{dimensions},{dtype_str},{size},{block_size}," + ",".join("OOM" for _ in range(11)))
+                            f"{dimensions},{dtype_str},{size},{block_size}," + ",".join("OOM" for _ in range(4)))
 
     with open(results_save_path / "results.csv", "w") as file:
         file.write("\n".join(to_write))
+
+
+def covariance(x, y):
+    return ((x - x.mean()) * (y - y.mean())).mean()
+
+
+def structural_similarity(
+    x,
+    y,
+    luminance_weight: float = 1,
+    contrast_weight: float = 1,
+    structure_weight: float = 1,
+    dynamic_range: float = 0,
+    luminance_stabilization: float = 0.01,
+    contrast_stabilization: float = 0.03,
+) -> float:
+    x_mean = x.mean()
+    y_mean = y.mean()
+    x_variance = x.var()
+    y_variance = y.var()
+    x_standard_deviation = x_variance**0.5
+    y_standard_deviation = y_variance**0.5
+    covariance_ = covariance(x, y)
+
+    luminance_stabilizer = luminance_stabilization * dynamic_range
+    contrast_stabilizer = contrast_stabilization * dynamic_range
+    similarity_stabilizer = contrast_stabilizer / 2
+
+    luminance_similarity = (2 * x_mean * y_mean + luminance_stabilizer) / (
+        x_mean**2 + y_mean**2 + luminance_stabilizer
+    )
+    contrast_similarity = (2 * x_standard_deviation * y_standard_deviation + contrast_stabilizer) / (
+        x_variance + y_variance + contrast_stabilizer
+    )
+    structure_similarity = (covariance_ + similarity_stabilizer) / (
+        x_standard_deviation * y_standard_deviation + similarity_stabilizer
+    )
+
+    return (
+        luminance_similarity**luminance_weight
+        * contrast_similarity**contrast_weight
+        * structure_similarity**structure_weight
+    )
 
 
 if __name__ == "__main__":
