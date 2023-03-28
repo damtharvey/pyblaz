@@ -13,13 +13,13 @@ def main():
     data_path = pathlib.Path(args.data)
     example_paths = tuple((data_path / "lgg-mri-segmentation" / "as_tensors").glob("*"))
 
-    minimum = float("-inf")
-    maximum = float("inf")
+    minimum = float("inf")
+    maximum = float("-inf")
 
     for example_path in tqdm.tqdm(example_paths):
         example = torch.load(example_path)
-        minimum = max(minimum, example.min())
-        maximum = min(maximum, example.max())
+        minimum = min(minimum, example.min())
+        maximum = max(maximum, example.max())
 
     print(f"{minimum=}, {maximum=}")
 

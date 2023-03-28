@@ -11,7 +11,7 @@ import compression
 import experiments.structural_similarity_time as ssim
 
 
-MRI_DYNAMIC_RANGE = 0.9294
+MRI_DYNAMIC_RANGE = 1
 
 
 class Channel:
