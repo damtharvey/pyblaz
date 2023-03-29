@@ -36,7 +36,7 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
     flair_mean = 0.087
     with open(results_path / "mri_metrics.csv") as file:
         dataframe = pd.read_csv(file)
-    for metric in ("mean", "variance", "norm_2"):
+    for metric in ("mean", "variance", "norm_2", "structural_similarity"):
         plt.clf()
 
         figure = plt.figure(figsize=(8, 3.5))
@@ -113,7 +113,7 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
                     horizontal_values + block_shape_offset + index_type_offset, error_means, marker=marker, color=color
                 )
 
-        absolute_axis.set_title(f"Error between compressed and uncompressed {metric}")
+        absolute_axis.set_title(f"Error between compressed and uncompressed {metric.replace('_', ' ')}".title())
         absolute_axis.set_ylabel("absolute error")
         absolute_axis.set_xlabel("floating-point type")
         absolute_axis.set_ylim(max(absolute_axis.get_ylim()[0], -0.1), max_error_without_nan)
@@ -123,8 +123,8 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
         ratio_axis.set_ylim(bottom=1)
 
         figure.tight_layout()
-        # plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
-        plt.show()
+        plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
+        # plt.show()
 
 
 def plot_legend(block_shapes, colors, index_type_markers, index_types, save_path):
@@ -137,8 +137,8 @@ def plot_legend(block_shapes, colors, index_type_markers, index_types, save_path
         legend.append(Patch(facecolor=color, label=f"{'×'.join(str(size) for size in block_shape)} blocks"))
     plt.legend(loc="center", ncol=len(legend) // 2, handles=legend)
     plt.gca().axis("off")
-    # plt.savefig(save_path / f"mri_flair_legend.pdf")
-    plt.show()
+    plt.savefig(save_path / f"mri_flair_legend.pdf")
+    # plt.show()
 
 
 if __name__ == "__main__":

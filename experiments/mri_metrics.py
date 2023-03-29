@@ -114,12 +114,11 @@ def main():
                         other_pretty_print_original_shape = "×".join(str(x) for x in flair.shape)
                         to_write.append(
                             f"{pretty_print_original_shape},"
-                            f"{other_pretty_print_original_shape}"
                             f"{pretty_print_float_type},"
                             f"{pretty_print_index_type},"
                             f"{pretty_print_block_shape},"
                             f"{keep_proportion},"
-                            f"structural_similarity"
+                            f"structural_similarity,"
                             f"{ssim.structural_similarity(flair, other_flair, dynamic_range=MRI_DYNAMIC_RANGE) - compressed_flair.structural_similarity(other_compressed_flair, dynamic_range=MRI_DYNAMIC_RANGE)}"
                         )
 
