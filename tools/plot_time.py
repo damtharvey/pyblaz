@@ -8,6 +8,7 @@ import pandas as pd
 
 
 def main():
+    raise NotImplementedError("need to churn through index dtypes")
     save_path = pathlib.Path("results/time/plots")
     save_path.mkdir(parents=True, exist_ok=True)
     colors = list(matplotlib.colors.TABLEAU_COLORS.keys())
@@ -16,8 +17,11 @@ def main():
     dataframe = pd.read_csv(f"results/time/results.csv")
     dataframe = dataframe.replace("OOM", np.NAN)
 
-    # operations = "compress,negate,add,multiply,dot,norm2,mean,variance,cosine_similarity,structural_similarity,decompress".split(",")
-    operations = ("mean", "variance", "norm2", "cosine_similarity", "structural_similarity")
+    operations = (
+        "compress,negate,add,multiply,dot,norm2,mean,variance,cosine_similarity,structural_similarity,decompress".split(
+            ","
+        )
+    )
 
     for operation in operations:
         plt.clf()
@@ -30,7 +34,6 @@ def main():
                         & (dataframe["block_size"] == block_size)
                     ]
                     horizontal_values = [str(x) for x in sorted(subframe["size"].unique())]
-
                     plt.plot(
                         horizontal_values,
                         subframe[operation].astype(float) / 10**6,
@@ -38,6 +41,7 @@ def main():
                         linestyle=line_style,
                         # label=f"BS{block_size}, {dimensions}D",
                     )
+
         plt.title(f"{operation.replace('_', ' ')} time".title())
         plt.xlabel("array size")
         plt.xticks(rotation=-30)

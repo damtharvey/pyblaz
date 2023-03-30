@@ -127,7 +127,8 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
             ratio_axis.set_ylim(bottom=1)
 
             figure.tight_layout()
-            plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
+            # plt.savefig(save_path / f"mri_flair_{metric}_error.pdf")
+            plt.savefig(save_path / f"mri_flair_{metric}_error.png", dpi=600)
             # plt.show()
 
 
