@@ -30,7 +30,7 @@ def main():
 
                     plt.plot(
                         horizontal_values,
-                        subframe[operation].astype(float) / 10**6,
+                        subframe[operation].astype(float),
                         label=f"{operation.replace('_', ' ')}",
                     )
                 plt.title(

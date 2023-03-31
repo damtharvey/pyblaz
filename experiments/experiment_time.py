@@ -2,12 +2,12 @@ import argparse
 import pathlib
 import math
 import itertools
+import time
 
 import tqdm
 
 import compression
 import torch
-from datetime import datetime
 
 
 def main():
@@ -72,60 +72,60 @@ def main():
                                 y = torch.rand((size,) * dimensions, dtype=dtype, device=device)
 
                                 # compress
-                                start_time = datetime.now()
+                                start_time = time.time()
                                 compressed_x = compressor.compress(x)
                                 compressed_y = compressor.compress(y)
-                                compress = ((datetime.now() - start_time) / 2).microseconds
+                                compress = (time.time() - start_time) / 2
 
                                 # compressed negate
-                                start_time = datetime.now()
+                                start_time = time.time()
                                 _ = -compressed_x
-                                compressed_negate = (datetime.now() - start_time).microseconds
+                                compressed_negate = time.time() - start_time
 
                                 # compressed add
-                                start_time = datetime.now()
+                                start_time = time.time()
                                 _ = compressed_x + compressed_y
-                                compressed_add = (datetime.now() - start_time).microseconds
+                                compressed_add = time.time() - start_time
 
                                 # compressed multiply
-                                start_time = datetime.now()
+                                start_time = time.time()
                                 _ = compressed_x * 3.14159
-                                compressed_multiply = (datetime.now() - start_time).microseconds
+                                compressed_multiply = time.time() - start_time
 
                                 # compressed dot
-                                start_time = datetime.now()
+                                start_time = time.time()
                                 _ = compressed_x.dot(compressed_y)
-                                compressed_dot = (datetime.now() - start_time).microseconds
+                                compressed_dot = time.time() - start_time
 
                                 # compressed norm2
-                                start_time = datetime.now()
+                                start_time = time.time()
                                 _ = compressed_x.norm_2()
-                                compressed_norm2 = (datetime.now() - start_time).microseconds
+                                compressed_norm2 = time.time() - start_time
 
                                 # compressed mean
-                                start_time = datetime.now()
+                                start_time = time.time()
                                 _ = compressed_x.mean()
-                                compressed_mean = (datetime.now() - start_time).microseconds
+                                compressed_mean = time.time() - start_time
 
                                 # compressed variance
-                                start_time = datetime.now()
+                                start_time = time.time()
                                 _ = compressed_x.variance()
-                                compressed_variance = (datetime.now() - start_time).microseconds
+                                compressed_variance = time.time() - start_time
 
                                 # compressed cosine similarity
-                                start_time = datetime.now()
+                                start_time = time.time()
                                 _ = compressed_x.cosine_similarity(compressed_y)
-                                compressed_cosine_similarity = (datetime.now() - start_time).microseconds
+                                compressed_cosine_similarity = time.time() - start_time
 
                                 # compressed structural similarity
-                                start_time = datetime.now()
+                                start_time = time.time()
                                 _ = compressed_x.structural_similarity(compressed_y)
-                                compressed_structural_similarity = (datetime.now() - start_time).microseconds
+                                compressed_structural_similarity = time.time() - start_time
 
                                 # decompression
-                                start_time = datetime.now()
+                                start_time = time.time()
                                 _ = compressor.decompress(compressed_x)
-                                decompress = (datetime.now() - start_time).microseconds
+                                decompress = time.time() - start_time
 
                                 if run_number > 0:
                                     results.append(
@@ -144,10 +144,10 @@ def main():
                                         ]
                                     )
 
-                            results = torch.tensor(results, dtype=torch.float64).mean(0).round()
+                            results = torch.tensor(results, dtype=torch.float64).mean(0)
                             to_write.append(
                                 f"{dimensions},{dtype_str},{index_dtype_str},{size},{block_size},"
-                                + ",".join(str(int(number)) for number in results)
+                                + ",".join(str(float(number)) for number in results)
                             )
                         except torch.cuda.OutOfMemoryError:
                             to_write.append(

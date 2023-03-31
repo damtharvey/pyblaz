@@ -24,13 +24,13 @@ def main():
 
     for operation, color in zip(blaz_operation_names, colors):
         plt.plot(
-            horizontal_values, dataframe[operation].astype(float) / 10**6, color=color, label=f"PyBlaz {operation}"
+            horizontal_values, dataframe[operation].astype(float), color=color, label=f"PyBlaz {operation}"
         )
 
     for (operation, blaz_operation), color in zip(blaz_operation_names.items(), colors):
         plt.plot(
             horizontal_values,
-            blaz_dataframe[operation].astype(float) / 10**6,
+            blaz_dataframe[operation].astype(float) / 10**6,  # microseconds
             color=color,
             linestyle="dashed",
             label=f"Blaz {operation}",
