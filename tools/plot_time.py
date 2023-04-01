@@ -29,7 +29,7 @@ def main():
         for dimensions in dataframe["dimensions"].unique():
             for block_size in dataframe["block_size"].unique():
                 plt.clf()
-                figure = plt.figure(figsize=(8, 3.5))
+                figure = plt.figure(figsize=(5, 3.5))
                 for color, dtype in zip(colors, dataframe["dtype"].unique()):
                     for line_style, index_dtype in zip(line_styles, dataframe["index_dtype"].unique()):
                         subframe = dataframe[
@@ -54,7 +54,7 @@ def main():
                     + f"{dimensions}-dimensional arrays, block size {block_size}"
                 )
                 plt.xlabel("array size")
-                # figure.xticks(rotation=-30)
+                plt.xticks(rotation=-30)
                 plt.ylabel("time (seconds)")
                 plt.yscale("log")
                 # figure.legend(ncol=2)
@@ -64,13 +64,14 @@ def main():
                 plt.close()
 
     plt.clf()
-    plt.figure(figsize=(8, 1.4))
+    plt.figure(figsize=(3.5, 1.4))
     legend = []
     for color, dtype in zip(colors, dataframe["dtype"].unique()):
         for line_style, index_dtype in zip(line_styles, dataframe["index_dtype"].unique()):
             legend.append(Line2D([0], [0], linestyle=line_style, color=color, label=f"{dtype}, {index_dtype}"))
     plt.legend(loc="center", ncol=2, handles=legend)
     plt.gca().axis("off")
+    plt.tight_layout()
     plt.savefig(save_path / "legend.pdf")
     # plt.show()
     plt.close()
