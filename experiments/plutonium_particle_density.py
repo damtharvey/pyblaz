@@ -20,10 +20,11 @@ def main():
     uncompressed_p, compressed_p, decompressed_p, timesteps = print_density_temporal_difference(args, "p")
     print(uncompressed_n)
     print(decompressed_n)
+
     plt.title("L2 norm difference for each timestep  for Pu atom", fontsize=12)
 
     plt.plot(list[:-1], compressed_n, label="neutron-density compressed")
-    plt.plot(list[:-1], decompressed_n, label="neutron-density (de)compressed")
+    plt.plot(list[:-1], decompressed_n, label="neutron-density (de)compressed", linestyle="-.")
     plt.plot(list[:-1], uncompressed_n, label="neutron-density uncompressed", linestyle="dotted")
 
     # plt.plot(list[:-1], compressed_p, label="proton-density compressed")
@@ -37,9 +38,56 @@ def main():
     plt.savefig("L2norm_Pu.png")
     plt.show()
     plt.close()
-    print(abs(max(uncompressed_n) - max(decompressed_n)))
-    print(abs(max(uncompressed_n) - max(compressed_n)))
-    print(abs(max(compressed_n) - max(decompressed_n)))
+    diff1 = []
+    diff2 = []
+    diff3 = []
+    for i in range(len(uncompressed_n)):
+        diff1.append(abs(uncompressed_n[i] - decompressed_n[i]))
+        diff2.append(abs(uncompressed_n[i] - compressed_n[i]))
+        diff3.append(abs(compressed_n[i] - decompressed_n[i]))
+
+    print(max(diff1))
+    print(max(diff2))
+    print(max(diff3))
+
+    # print(print_wasserstein_distance(args, "n"))
+
+
+# def softmax(x):
+#     """Compute softmax values for each sets of scores in x."""
+#     e_x = np.exp(x - np.max(x))
+#     return e_x / e_x.sum()
+
+
+# def print_wasserstein_distance(args, particle_name: str):
+#     input_shape = tuple(int(size) for size in args.input_shape.split("-"))
+#     dtype = torch.float32
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     paths = tuple((pathlib.Path(args.directory) / particle_name).glob("*.raw"))
+
+#     densities = torch.empty(len(paths), *input_shape)
+#     for index, path in enumerate(paths):
+#         densities[index] = torch.from_numpy(np.fromfile(path, dtype=np.uint8)).reshape(input_shape)
+#     densities = densities.type(dtype).to(device)
+
+#     order = 68
+#     uncompressed_densities = []
+#     print("uncompressed")
+#     for i in range(len(densities)):
+#         uncompressed_densities.append(np.sort(softmax(np.asarray(densities[i])), axis=None))
+#     print(len(uncompressed_densities))
+#     uncompressed_list_compressed_wass = []
+#     uncompressed_per_time_step = []
+#     for i in range(len(uncompressed_densities) - 1):
+#         uncompressed_per_time_step = [
+#             ((abs(uncompressed_densities[i][a] - uncompressed_densities[i + 1][b])) ** order).mean() ** (1 / order)
+#             for a in range(len(uncompressed_densities[i]))
+#             for b in range(len(uncompressed_densities[i + 1]))
+#         ]
+#     uncompressed_list_compressed_wass.append(
+#         np.mean(uncompressed_per_time_step),
+#     )
+#     return uncompressed_per_time_step
 
 
 def print_density_temporal_difference(args, particle_name: str):
@@ -56,7 +104,7 @@ def print_density_temporal_difference(args, particle_name: str):
     print("uncompressed")
     uncompressed_result = [magnitude.item() for magnitude in list((densities[1:] - densities[:-1]).norm(2, (1, 2, 3)))]
     print(len(uncompressed_result))
-    compressor = compression.Compressor(block_shape=(8, 8, 8), dtype=dtype, index_dtype=torch.int16, device=device)
+    compressor = compression.Compressor(block_shape=(16, 16, 16), dtype=dtype, index_dtype=torch.int16, device=device)
     print("compressed")
     timesteps = [timestep for timestep in range(len(densities) - 1)]
     compressed_per_time_step = [compressor.compress(densities[time_step]) for time_step in range(densities.shape[0])]

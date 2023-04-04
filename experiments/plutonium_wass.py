@@ -20,10 +20,13 @@ def main():
     list_compressed_wass1 = []
     list_compressed_wass2 = []
     list_compressed_wass3 = []
+    list_compressed_wass4 = []
     list_wass = []
     list_wass1 = []
     list_wass2 = []
     list_wass3 = []
+    list_wass4 = []
+
     for l in range(0, len(list) - 1):
         print(l)
         txt_file0 = open("./data/plutonium/txt/n/" + str(list[l]) + ".csv", "r")
@@ -66,10 +69,17 @@ def main():
                 temp1.append(float(j))
             final_list1.append(temp1)
 
-        dtype = torch.float64
+        dtype = torch.float32
         device = torch.device("cpu")
 
-        compressor = Compressor(block_shape=(8, 8), dtype=dtype, device=device)
+        compressor = Compressor(
+            block_shape=(
+                16,
+                16,
+            ),
+            dtype=dtype,
+            device=device,
+        )
         print(len(final_list1))
 
         a = torch.FloatTensor(final_list0)
@@ -80,7 +90,8 @@ def main():
         order = 1
         order1 = 40
         order2 = 60
-        order3 = 65
+        order3 = 68
+        order4 = 80
 
         uncompressed_softmax_x = softmax(np.asarray(a))
         uncompressed_softmax_y = softmax(np.asarray(b))
@@ -117,10 +128,14 @@ def main():
         wass_distance3 = [
             ((abs(a - b)) ** order3).mean() ** (1 / order3) for a, b in zip(sorted_softmax_x, sorted_softmax_y)
         ]
+        wass_distance4 = [
+            ((abs(a - b)) ** order4).mean() ** (1 / order4) for a, b in zip(sorted_softmax_x, sorted_softmax_y)
+        ]
         list_wass.append(np.mean(wass_distance))
         list_wass1.append(np.mean(wass_distance1))
         list_wass2.append(np.mean(wass_distance2))
         list_wass3.append(np.mean(wass_distance3))
+        list_wass4.append(np.mean(wass_distance4))
         time_end = time.time()
 
         time_compress_start = time.time()
@@ -149,6 +164,10 @@ def main():
             ((abs(a - b)) ** order3).mean() ** (1 / order3)
             for a, b in zip(sorted_softmax_compressed_x_mean, sorted_softmax_compressed_y_mean)
         ]
+        wass_distance_compressed4 = [
+            ((abs(a - b)) ** order4).mean() ** (1 / order4)
+            for a, b in zip(sorted_softmax_compressed_x_mean, sorted_softmax_compressed_y_mean)
+        ]
         print(sorted_softmax_compressed_x_mean[0])
         # print(wass_distance_compressed)
         list_compressed_wass.append(
@@ -163,6 +182,9 @@ def main():
         list_compressed_wass3.append(
             np.mean(wass_distance_compressed3),
         )
+        list_compressed_wass4.append(
+            np.mean(wass_distance_compressed4),
+        )
         time_compress_end = time.time()
     print(len(list_compressed_wass1))
     print(len(list_wass1))
@@ -170,6 +192,7 @@ def main():
     print(len(list_wass2))
     print(len(list_compressed_wass3))
     print(len(list_wass3))
+
     print("time take with (de)compression=", time_end - time_start)
     print("time taken without (de)compression", time_compress_end - time_compress_start)
     print(
@@ -188,7 +211,8 @@ def main():
     # # plt.plot(list, list_wass1, label="(de)compressed")
     plt.plot(list[:-1], list_compressed_wass2, label="p = 60")
     # # plt.plot(list[:-1], list_wass2, label="(de)compressed")
-    plt.plot(list[:-1], list_compressed_wass3, label="p = 65", color="red")
+    plt.plot(list[:-1], list_compressed_wass3, label="p = 68", color="red")
+    plt.plot(list[:-1], list_compressed_wass4, label="p = 80", color="navy", linestyle="dotted")
 
     # plt.plot(list[:-1], uncompressed_list_compressed_wass, label="uncompressed with p = 1", linestyle="dashed")
     plt.ylabel("Wasserstein distance", fontsize=14)
@@ -198,7 +222,7 @@ def main():
     plt.legend(fontsize=14)
     plt.title("Wasserstein distance between each timestep for neutron-densties of Pu atom", loc="center", wrap=True)
     sub_axes = plt.axes([0.4, 0.5, 0.25, 0.25])
-    sub_axes.plot(list[:-1], list_compressed_wass3, label="p = 65", color="red")
+    sub_axes.plot(list[:-1], list_compressed_wass3, label="p = 68", color="red")
     plt.ylabel("Wasserstein distance", fontsize=7)
     plt.xlabel("Time steps", fontsize=8)
     plt.xticks(fontsize=8)
