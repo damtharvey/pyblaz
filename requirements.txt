@@ -1,7 +1,0 @@
-torchvision~=0.14.1
-tabulate~=0.8.9
-tqdm~=4.64.0
-numpy~=1.23.5
-matplotlib~=3.7.0
-pillow~=9.4.0
-pandas~=1.5.3
