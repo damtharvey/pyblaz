@@ -45,13 +45,7 @@ def _test():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     block_shape = (args.block_size,) * args.dimensions
-    compressor = Compressor(
-        block_shape=block_shape,
-        dtype=dtype,
-        index_dtype=index_dtypes[args.index_dtype],
-        device=device,
-    )
-    decompressor = Decompressor(
+    compressor = PyBlaz(
         block_shape=block_shape,
         dtype=dtype,
         index_dtype=index_dtypes[args.index_dtype],
@@ -70,22 +64,22 @@ def _test():
         y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
 
         # compress
-        compressed_x = compressor(x)
-        compressed_y = compressor(y)
+        compressed_x = compressor.compress(x)
+        compressed_y = compressor.compress(y)
 
-        results.append((decompressor(compressed_x) - x).norm(torch.inf))
+        results.append((compressor.decompress(compressed_x) - x).norm(torch.inf))
 
         # compressed negate
-        results.append((decompressor(-compressed_x) + x).norm(torch.inf))
+        results.append((compressor.decompress(-compressed_x) + x).norm(torch.inf))
 
         # compressed add
-        results.append((decompressor(compressed_x + compressed_y) - (x + y)).norm(torch.inf))
+        results.append((compressor.decompress(compressed_x + compressed_y) - (x + y)).norm(torch.inf))
 
         # compressed add scalar
-        results.append((decompressor(compressed_x + 3.14159) - (x + 3.14159)).norm(torch.inf))
+        results.append((compressor.decompress(compressed_x + 3.14159) - (x + 3.14159)).norm(torch.inf))
 
         # compressed multiply
-        results.append((decompressor(compressed_x * 3.14159) - (x * 3.14159)).norm(torch.inf))
+        results.append((compressor.decompress(compressed_x * 3.14159) - (x * 3.14159)).norm(torch.inf))
 
         # compressed dot
         results.append(abs((compressed_x.dot(compressed_y) - (x * y).sum())))
@@ -129,7 +123,7 @@ def _test():
     )
 
 
-class PyBlaz(torch.nn.Module):
+class PyBlaz:
     """
     compressor inspired by https://arxiv.org/abs/2202.13007
 
@@ -152,9 +146,8 @@ class PyBlaz(torch.nn.Module):
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
         self.block_shape = block_shape
-        self.log_2_block_shape = tuple(size.bit_length() - 1 for size in self.block_shape)
+        self.log_2_block_shape = tuple(size.bit_length() - 1 for size in block_shape)
         self.transform = transform
         self.n_dimensions = len(block_shape)
         self.dtype = dtype
@@ -165,10 +158,19 @@ class PyBlaz(torch.nn.Module):
             if mask is not None
             else torch.ones(block_shape, dtype=torch.bool, device=device)
         )
-        self.transform_tensor_directory = transform_tensor_directory
 
+        self.transform_tensor_directory = transform_tensor_directory
         self.transformer_tensor = None
         self.inverse_transformer_tensor = None
+
+        self.compressor = Compressor(self, *args, **kwargs)
+        self.decompressor = Decompressor(self, *args, **kwargs)
+
+    def compress(self, tensor: torch.Tensor) -> CompressedTensor:
+        return self.compressor(tensor)
+
+    def decompress(self, compressed_tensor: CompressedTensor) -> torch.Tensor:
+        return self.decompressor(compressed_tensor)
 
     def blockwise_transform(self, blocked_tensor: torch.Tensor, inverse=False) -> torch.Tensor:
         """
@@ -177,7 +179,6 @@ class PyBlaz(torch.nn.Module):
         Transform the blocked tensor blockwise according to self.block_shape.
 
         :param blocked_tensor:
-        :param n_coefficients:
         :param inverse:
         :return:
         """
@@ -231,10 +232,15 @@ class PyBlaz(torch.nn.Module):
         )
 
 
-class Compressor(PyBlaz):
-    def __init__(self, *args, **kwargs):
+class Compressor(torch.nn.Module):
+    def __init__(
+        self,
+            codec: PyBlaz,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
-        self = torch.compile(self)
+        self.codec = codec
 
     def forward(self, tensor):
         """
@@ -243,15 +249,15 @@ class Compressor(PyBlaz):
         :param tensor: uncompressed tensor
         :returns: compressed tensor
         """
-        assert self.n_dimensions == len(tensor.shape), (
-            f"Compressor dimensionality ({self.n_dimensions}) "
+        assert self.codec.n_dimensions == len(tensor.shape), (
+            f"Compressor dimensionality ({self.codec.n_dimensions}) "
             f"must match tensor dimensionality ({len(tensor.shape)})."
         )
 
         blocked = self.block(tensor)
         # If there is pruning, it is faster to calculate all coefficients and then drop some.
-        indicess, biggest_coefficients = self.bin(self.blockwise_transform(blocked)[..., self.mask])
-        return CompressedTensor(tensor.shape, biggest_coefficients, indicess, self.mask)
+        indicess, biggest_coefficients = self.bin(self.codec.blockwise_transform(blocked)[..., self.codec.mask])
+        return CompressedTensor(tensor.shape, biggest_coefficients, indicess, self.codec.mask)
 
     def block(self, unblocked: torch.Tensor) -> torch.Tensor:
         """
@@ -266,7 +272,7 @@ class Compressor(PyBlaz):
                 itertools.chain(
                     *(
                         (0, (block_size - size) % block_size)
-                        for size, block_size in zip(reversed(unblocked.shape), reversed(self.block_shape))
+                        for size, block_size in zip(reversed(unblocked.shape), reversed(self.codec.block_shape))
                     )
                 )
             ),
@@ -274,14 +280,14 @@ class Compressor(PyBlaz):
 
         blocks_shape = tuple(
             unblocked_size >> log_2_block_size
-            for unblocked_size, log_2_block_size in zip(padded.shape, self.log_2_block_shape)
+            for unblocked_size, log_2_block_size in zip(padded.shape, self.codec.log_2_block_shape)
         )
 
-        blocked = torch.zeros(blocks_shape + self.block_shape, dtype=self.dtype, device=self.device)
-        for intrablock_index in itertools.product(*(range(size) for size in self.block_shape)):
+        blocked = torch.zeros(blocks_shape + self.codec.block_shape, dtype=self.codec.dtype, device=self.codec.device)
+        for intrablock_index in itertools.product(*(range(size) for size in self.codec.block_shape)):
             selection_string = ",".join(
                 f"{intrablock_index_element}::{block_size}"
-                for intrablock_index_element, block_size in zip(intrablock_index, self.block_shape)
+                for intrablock_index_element, block_size in zip(intrablock_index, self.codec.block_shape)
             )
             blocked[(...,) + intrablock_index] = eval(f"padded[{selection_string}]")
 
@@ -297,30 +303,36 @@ class Compressor(PyBlaz):
         """
         biggest_coefficients = coefficientss.norm(torch.inf, -1)
         return (
-            (coefficientss * (compressed.INDICES_RADIUS[self.index_dtype] / biggest_coefficients[..., None]))
+            (coefficientss * (compressed.INDICES_RADIUS[self.codec.index_dtype] / biggest_coefficients[..., None]))
             .round()
-            .type(self.index_dtype)
+            .type(self.codec.index_dtype)
         ), biggest_coefficients
 
-class Decompressor(PyBlaz):
-    def __init__(self, *args, **kwargs):
+
+class Decompressor(torch.nn.Module):
+    def __init__(
+        self,
+            codec: PyBlaz,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
-        self = torch.compile(self)
+        self.codec = codec
 
     def forward(self, compressed_tensor):
         """
         This isn't blockwise complete decompression. Some things are better done over the whole tensor.
         """
-        assert self.n_dimensions == compressed_tensor.n_dimensions, (
-            f"Compressor dimensionality ({self.n_dimensions}) "
+        assert self.codec.n_dimensions == compressed_tensor.n_dimensions, (
+            f"Decompressor dimensionality ({self.codec.n_dimensions}) "
             f"must match tensor dimensionality ({compressed_tensor.n_dimensions})."
         )
         coefficientss = torch.zeros(
-            compressed_tensor.blocks_shape + compressed_tensor.block_shape, dtype=self.dtype, device=self.device
+            compressed_tensor.blocks_shape + compressed_tensor.block_shape, dtype=self.codec.dtype, device=self.codec.device
         )
         coefficientss[..., compressed_tensor.mask] = self.bin_inverse(compressed_tensor)
 
-        unblocked = self.block_inverse(self.blockwise_transform(coefficientss, inverse=True))
+        unblocked = self.block_inverse(self.codec.blockwise_transform(coefficientss, inverse=True))
 
         return eval(f"unblocked[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
 
@@ -332,13 +344,13 @@ class Decompressor(PyBlaz):
         :return: unblocked tensor
         """
         unblocked_shape = (
-            *(n_blocks << size for n_blocks, size in zip(blocked.shape[: self.n_dimensions], self.log_2_block_shape)),
+            *(n_blocks << size for n_blocks, size in zip(blocked.shape[: self.codec.n_dimensions], self.codec.log_2_block_shape)),
         )
-        unblocked = torch.zeros(unblocked_shape, dtype=self.dtype, device=self.device)
-        for intrablock_index in itertools.product(*(range(size) for size in self.block_shape)):
+        unblocked = torch.zeros(unblocked_shape, dtype=self.codec.dtype, device=self.codec.device)
+        for intrablock_index in itertools.product(*(range(size) for size in self.codec.block_shape)):
             selection_string = ",".join(
                 f"{intrablock_index_element}::{block_size}"
-                for intrablock_index_element, block_size in zip(intrablock_index, self.block_shape)
+                for intrablock_index_element, block_size in zip(intrablock_index, self.codec.block_shape)
             )
             exec(f"unblocked[{selection_string}] = blocked[(...,) + intrablock_index]")
 
@@ -353,7 +365,7 @@ class Decompressor(PyBlaz):
         Biggest coefficients are shaped (block indices).
         """
         return (
-            compressed_tensor.indicess.type(self.dtype)
+            compressed_tensor.indicess.type(self.codec.dtype)
             * compressed_tensor.biggest_coefficients[..., None]
             / compressed.INDICES_RADIUS[compressed_tensor.indicess.dtype]
         )
