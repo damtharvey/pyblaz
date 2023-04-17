@@ -1,12 +1,11 @@
 # As described https://bioc.ism.ac.jp/packages/3.10/bioc/vignettes/waddR/inst/doc/wasserstein_metric.html
 
 
-from compression import Compressor
+from pyblaz.compression import PyBlaz
 
 import tqdm
 import torch
 import numpy as np
-import scipy.stats
 
 
 def softmax(x):
@@ -50,7 +49,7 @@ def _test():
 
     block_shape = (args.block_size,) * (args.dimensions)
 
-    compressor = Compressor(
+    compressor = PyBlaz(
         block_shape=block_shape,
         dtype=dtype,
         index_dtype=index_dtypes[args.index_dtype],

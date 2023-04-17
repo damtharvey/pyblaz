@@ -1,11 +1,8 @@
-from compression import Compressor
+from pyblaz.compression import PyBlaz
 import matplotlib.pyplot as plt
-import structural_similarity
 import torch
 import numpy as np
 import matplotlib.colors as mcolors
-
-from matplotlib.pyplot import figure
 
 
 def softmax(x):
@@ -54,7 +51,7 @@ axs[1, 0].set_title("difference of float16 vs float32 for uncompressed heights")
 dtype = torch.float32
 
 device = torch.device("cpu")
-compressor = Compressor(block_shape=(32, 32), dtype=dtype, device=device)
+compressor = PyBlaz(block_shape=(32, 32), dtype=dtype, device=device)
 
 a = torch.FloatTensor(eta)
 b = torch.FloatTensor(eta2)

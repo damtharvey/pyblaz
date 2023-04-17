@@ -1,6 +1,6 @@
 import csv
 
-from compression import Compressor
+from pyblaz.compression import PyBlaz
 
 import torch
 
@@ -26,7 +26,7 @@ b = torch.FloatTensor(rho_2[:251001]).reshape(501, 501).to(device)
 
 dtype = torch.float64
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-compressor = Compressor(block_shape=(4, 4), dtype=dtype, device=device)
+compressor = PyBlaz(block_shape=(4, 4), dtype=dtype, device=device)
 
 compressed_a = compressor.compress(a)
 compressed_b = compressor.compress(b)

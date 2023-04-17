@@ -41,7 +41,9 @@ def main():
     ax1.plot(horizontal_values, memory_savings, color=colors[1], label="memory savings")
     ax1.plot(horizontal_values, expected_memory_savings, color=colors[1], linestyle="dashed")
     ax2.plot(horizontal_values, compression_ratio, color=colors[2], label="compression ratio")
-    ax2.plot(horizontal_values, expected_compression_ratio, color=colors[2], linestyle="dashed", label="compression ratio")
+    ax2.plot(
+        horizontal_values, expected_compression_ratio, color=colors[2], linestyle="dashed", label="compression ratio"
+    )
     ax1.legend(loc="lower right")
     plt.tight_layout()
     plt.savefig(f"results/space/plots/blaz_space_ratio.pdf")

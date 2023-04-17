@@ -114,7 +114,10 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
                     )
 
                     absolute_axis.scatter(
-                        horizontal_values + block_shape_offset + index_type_offset, error_means, marker=marker, color=color
+                        horizontal_values + block_shape_offset + index_type_offset,
+                        error_means,
+                        marker=marker,
+                        color=color,
                     )
 
             absolute_axis.set_title(f"Error between compressed and uncompressed {metric.replace('_', ' ')}".title())

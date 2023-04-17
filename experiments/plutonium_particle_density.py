@@ -4,7 +4,7 @@ import pathlib
 import torch
 import numpy as np
 
-import compression
+from pyblaz import compression
 import matplotlib.pyplot as plt
 
 
@@ -104,7 +104,7 @@ def print_density_temporal_difference(args, particle_name: str):
     print("uncompressed")
     uncompressed_result = [magnitude.item() for magnitude in list((densities[1:] - densities[:-1]).norm(2, (1, 2, 3)))]
     print(len(uncompressed_result))
-    compressor = compression.Compressor(block_shape=(16, 16, 16), dtype=dtype, index_dtype=torch.int16, device=device)
+    compressor = compression.PyBlaz(block_shape=(16, 16, 16), dtype=dtype, index_dtype=torch.int16, device=device)
     print("compressed")
     timesteps = [timestep for timestep in range(len(densities) - 1)]
     compressed_per_time_step = [compressor.compress(densities[time_step]) for time_step in range(densities.shape[0])]

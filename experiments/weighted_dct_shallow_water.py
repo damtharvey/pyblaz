@@ -4,7 +4,7 @@ import pathlib
 import torch
 import tqdm
 
-import compression
+from pyblaz import compression
 
 
 def main():
@@ -20,7 +20,7 @@ def main():
     dtype = torch.float64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    compressor = compression.Compressor(block_shape=(128, 128), dtype=dtype, device=device)
+    compressor = compression.PyBlaz(block_shape=(128, 128), dtype=dtype, device=device)
 
     to_write = ["fastmath_vs_o3,ftz_vs_o3"]
 

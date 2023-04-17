@@ -22,7 +22,7 @@ def main():
 def like_shallow_water():
     dimensions = 2
     tensor_size = (79, 55)
-    float_size= 64
+    float_size = 64
     int_size = 8
     block_size = 8
     n_time_steps = 10**6
@@ -71,13 +71,17 @@ def sweep_settings(colors, ratio=False):
             plt.clf()
             for line_style, n_dimensions in zip(reversed(("dotted", "dashed", "solid")), reversed(dimensions)):
                 # for color_index, block_size in enumerate(block_sizes):
-                    # keep_rate = 1
+                # keep_rate = 1
                 for color_index, keep_rate in enumerate(keep_rates):
                     if ratio:
                         compression_ratio = [
                             uncompressed_size((tensor_size,) * n_dimensions)
                             / compressed_size(
-                                (tensor_size,) * n_dimensions, (block_size,) * n_dimensions, keep_rate, float_size, int_size
+                                (tensor_size,) * n_dimensions,
+                                (block_size,) * n_dimensions,
+                                keep_rate,
+                                float_size,
+                                int_size,
                             )
                             for tensor_size in tensor_sizes
                         ]
@@ -91,7 +95,9 @@ def sweep_settings(colors, ratio=False):
                         )
                     else:
                         space_taken = [
-                            compressed_size((size,) * n_dimensions, (block_size,) * n_dimensions, keep_rate, float_size, int_size)
+                            compressed_size(
+                                (size,) * n_dimensions, (block_size,) * n_dimensions, keep_rate, float_size, int_size
+                            )
                             for size in tensor_sizes
                         ]
                         plt.plot(
@@ -123,8 +129,16 @@ def sweep_settings(colors, ratio=False):
                 plt.savefig(save_path / f"space_float{float_size}_int{int_size}.pdf")
 
 
-def compressed_size(original_shape: tuple[int, ...], block_shape: tuple[int, ...], keep_proportion: float, float_size: int, int_size: int):
-    n_blocks = math.prod(math.ceil(tensor_size / block_size) for tensor_size, block_size in zip(original_shape, block_shape))
+def compressed_size(
+    original_shape: tuple[int, ...],
+    block_shape: tuple[int, ...],
+    keep_proportion: float,
+    float_size: int,
+    int_size: int,
+):
+    n_blocks = math.prod(
+        math.ceil(tensor_size / block_size) for tensor_size, block_size in zip(original_shape, block_shape)
+    )
     return (
         4
         + 64 * len(original_shape)

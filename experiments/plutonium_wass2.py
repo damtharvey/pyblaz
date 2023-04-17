@@ -1,9 +1,5 @@
-from cProfile import label
-from compression import Compressor
+from pyblaz.compression import PyBlaz
 import matplotlib.pyplot as plt
-import numpy as np
-from numpy import linalg as LA
-import os
 import torch
 import numpy as np
 
@@ -30,7 +26,6 @@ list = [665, 670, 675, 680, 686, 687, 689, 690, 692, 693, 694, 695, 699]
 print("timestamp, difference, subtraction, (de)compressed subtraction")
 list_result = []
 for l in range(0, len(list) - 1):
-
     txt_file0 = open("./data/plutonium/txt/n/" + str(list[l]) + ".csv", "r")
     file_content0 = txt_file0.read()
 
@@ -75,7 +70,7 @@ for l in range(0, len(list) - 1):
     dtype = torch.float64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    compressor = Compressor(block_shape=(32, 32), dtype=dtype, device=device)
+    compressor = PyBlaz(block_shape=(32, 32), dtype=dtype, device=device)
 
     a = torch.FloatTensor(final_list0)
     b = torch.FloatTensor(final_list1)

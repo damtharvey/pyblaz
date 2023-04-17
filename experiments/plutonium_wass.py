@@ -1,4 +1,4 @@
-from compression import Compressor
+from pyblaz.compression import PyBlaz
 import matplotlib.pyplot as plt
 
 import torch
@@ -72,7 +72,7 @@ def main():
         dtype = torch.float32
         device = torch.device("cpu")
 
-        compressor = Compressor(
+        compressor = PyBlaz(
             block_shape=(
                 16,
                 16,

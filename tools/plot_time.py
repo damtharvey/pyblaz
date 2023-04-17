@@ -46,7 +46,7 @@ def main():
                             color=color,
                             linestyle=line_style,
                             label=f"{dtype}, {index_dtype}",
-                            figure=figure
+                            figure=figure,
                         )
 
                 plt.title(

@@ -1,4 +1,4 @@
-from compression import Compressor
+from pyblaz.compression import PyBlaz
 
 import tqdm
 import torch
@@ -6,7 +6,6 @@ import torch
 
 def _test():
     import argparse
-    from tabulate import tabulate
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=5)
@@ -39,7 +38,7 @@ def _test():
 
     block_shape = (args.block_size,) * (args.dimensions)
 
-    compressor = Compressor(
+    compressor = PyBlaz(
         block_shape=block_shape,
         dtype=dtype,
         index_dtype=index_dtypes[args.index_dtype],

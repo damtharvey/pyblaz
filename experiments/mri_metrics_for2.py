@@ -1,13 +1,11 @@
 import argparse
 import pathlib
-import itertools
-import math
 
 import torch
 import torch.nn.functional as torchfunctional
 import tqdm
 
-import compression
+from pyblaz import compression
 import experiments.structural_similarity_time as ssim
 
 
@@ -45,7 +43,7 @@ def main():
     #     key=lambda x: sum(x),
     # )[:n_coefficients]:
     #     mask[index] = True
-    compressor = compression.Compressor(
+    compressor = compression.PyBlaz(
         block_shape=(8, 8, 8),
         dtype=torch.float32,
         index_dtype=torch.int8,

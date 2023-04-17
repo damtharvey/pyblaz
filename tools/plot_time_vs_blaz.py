@@ -23,9 +23,7 @@ def main():
     horizontal_values = [str(x) for x in sorted(dataframe["size"].unique())]
 
     for operation, color in zip(blaz_operation_names, colors):
-        plt.plot(
-            horizontal_values, dataframe[operation].astype(float), color=color, label=f"PyBlaz {operation}"
-        )
+        plt.plot(horizontal_values, dataframe[operation].astype(float), color=color, label=f"PyBlaz {operation}")
 
     for (operation, blaz_operation), color in zip(blaz_operation_names.items(), colors):
         plt.plot(

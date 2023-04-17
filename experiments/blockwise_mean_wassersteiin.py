@@ -1,4 +1,4 @@
-from compression import Compressor
+from pyblaz.compression import PyBlaz
 
 import tqdm
 import torch
@@ -11,7 +11,6 @@ def softmax(x):
     # return e_x / e_x.sum()
     e_x = torch.exp(x - x.max())
     return e_x / e_x.sum()
-
 
 
 def _test():
@@ -49,7 +48,7 @@ def _test():
 
     block_shape = (args.block_size,) * (args.dimensions)
 
-    compressor = Compressor(
+    compressor = PyBlaz(
         block_shape=block_shape,
         dtype=dtype,
         index_dtype=index_dtypes[args.index_dtype],
@@ -57,7 +56,7 @@ def _test():
     )
     table = []
     for size in tqdm.tqdm(
-        tuple(1 << p for p in range(args.block_size.bit_length() , args.max_size.bit_length())),
+        tuple(1 << p for p in range(args.block_size.bit_length(), args.max_size.bit_length())),
         desc=f"time {args.dimensions}D",
     ):
         results = [size]
@@ -68,8 +67,6 @@ def _test():
         x /= x.max()
         y = x - torch.randn((size,) * args.dimensions)
 
-
-
         compressed_x = compressor.compress(x)
         compressed_y = compressor.compress(y)
 
@@ -78,11 +75,12 @@ def _test():
 
         softmax_compressed_x_mean = softmax(
             # np.asarray(
-                compressed_x_mean)
+            compressed_x_mean
+        )
         # )
         softmax_compressed_y_mean = softmax(
             # np.asarray(
-                compressed_y_mean
+            compressed_y_mean
             # )
         )
 
@@ -92,7 +90,7 @@ def _test():
             # )
         )
         softmax_y = softmax(
-        # np.asarray(
+            # np.asarray(
             y
             # )
         )
@@ -112,7 +110,6 @@ def _test():
         wass_distance_compressed = []
         for a, b in zip(sorted_softmax_compressed_x_mean, sorted_softmax_compressed_y_mean):
             wass_distance_compressed.append(((abs(a - b)) ** order).mean() ** (1 / order))
-
 
         wass_distance = [
             ((abs(a - b)) ** order).mean() ** (1 / order) for a, b in zip(sorted_softmax_x, sorted_softmax_y)

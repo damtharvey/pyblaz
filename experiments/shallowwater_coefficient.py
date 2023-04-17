@@ -1,14 +1,11 @@
-from cProfile import label
-from compression import Compressor
+from pyblaz.compression import PyBlaz
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy import linalg as LA
 
 import torch
 
 
 def diagonalOrder(arr, n, m):
-
     ordering_elements = [[] for i in range(n + m - 1)]
 
     for i in range(m):
@@ -70,7 +67,7 @@ for timestep in range(500):
     dtype = torch.float64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    compressor = Compressor(block_shape=(8, 8), dtype=dtype, device=device)
+    compressor = PyBlaz(block_shape=(8, 8), dtype=dtype, device=device)
 
     a = torch.FloatTensor(final_list0)
     b = torch.FloatTensor(final_list1)

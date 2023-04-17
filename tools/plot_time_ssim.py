@@ -43,9 +43,7 @@ def main():
                 plt.yscale("log")
                 plt.legend()
                 plt.tight_layout()
-                plt.savefig(
-                    save_path / f"{dimensions}d_{dtype}_{'x'.join((str(block_size),) * dimensions)}.pdf"
-                )
+                plt.savefig(save_path / f"{dimensions}d_{dtype}_{'x'.join((str(block_size),) * dimensions)}.pdf")
                 # plt.show()
 
 

@@ -5,7 +5,7 @@ import itertools
 
 import tqdm
 
-import compression
+from pyblaz import compression
 import torch
 from datetime import datetime
 
@@ -32,8 +32,6 @@ def main():
     results_save_path = pathlib.Path(args.results_path) / args.experiment_name
     results_save_path.mkdir(parents=True, exist_ok=True)
 
-
-
     dtypes = {
         "bfloat16": torch.bfloat16,
         "float16": torch.float16,
@@ -41,7 +39,9 @@ def main():
         "float64": torch.float64,
     }
 
-    to_write = ["dimensions,dtype,size,block_size,uncompressed_structural_similarity,compress,compressed_structural_similarity,decompress"]
+    to_write = [
+        "dimensions,dtype,size,block_size,uncompressed_structural_similarity,compress,compressed_structural_similarity,decompress"
+    ]
 
     for dtype_str, dtype in dtypes.items():
         for dimensions in range(2, 5):
@@ -50,11 +50,11 @@ def main():
                 n_coefficients = int(math.prod(block_shape) * args.keep_proportion)
                 mask = torch.zeros(block_shape, dtype=torch.bool)
                 for index in sorted(
-                        itertools.product(*(range(size) for size in block_shape)),
-                        key=lambda coordinates: sum(coordinates),
+                    itertools.product(*(range(size) for size in block_shape)),
+                    key=lambda coordinates: sum(coordinates),
                 )[:n_coefficients]:
                     mask[index] = True
-                compressor = compression.Compressor(
+                compressor = compression.PyBlaz(
                     block_shape=block_shape,
                     dtype=dtype,
                     index_dtype=index_dtypes[args.index_dtype],
@@ -104,10 +104,14 @@ def main():
                                 )
 
                         results = torch.tensor(results, dtype=torch.float64).mean(0).round()
-                        to_write.append(f"{dimensions},{dtype_str},{size},{block_size}," + ",".join(str(int(number)) for number in results))
+                        to_write.append(
+                            f"{dimensions},{dtype_str},{size},{block_size},"
+                            + ",".join(str(int(number)) for number in results)
+                        )
                     except torch.cuda.OutOfMemoryError:
                         to_write.append(
-                            f"{dimensions},{dtype_str},{size},{block_size}," + ",".join("OOM" for _ in range(4)))
+                            f"{dimensions},{dtype_str},{size},{block_size}," + ",".join("OOM" for _ in range(4))
+                        )
 
     with open(results_save_path / "results.csv", "w") as file:
         file.write("\n".join(to_write))

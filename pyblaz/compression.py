@@ -1,15 +1,14 @@
-import functools
 import itertools
-import math
 import pathlib
 
 import torch
+import torch.nn
 import torch.nn.functional
 import tqdm
 
 import compressed
 import transforms
-from compressed import CompressedBlock, CompressedTensor
+from compressed import CompressedTensor
 
 
 def _test():
@@ -52,6 +51,12 @@ def _test():
         index_dtype=index_dtypes[args.index_dtype],
         device=device,
     )
+    decompressor = Decompressor(
+        block_shape=block_shape,
+        dtype=dtype,
+        index_dtype=index_dtypes[args.index_dtype],
+        device=device,
+    )
 
     table = []
 
@@ -65,22 +70,22 @@ def _test():
         y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
 
         # compress
-        compressed_x = compressor.compress(x)
-        compressed_y = compressor.compress(y)
+        compressed_x = compressor(x)
+        compressed_y = compressor(y)
 
-        results.append((compressor.decompress(compressed_x) - x).norm(torch.inf))
+        results.append((decompressor(compressed_x) - x).norm(torch.inf))
 
         # compressed negate
-        results.append((compressor.decompress(-compressed_x) + x).norm(torch.inf))
+        results.append((decompressor(-compressed_x) + x).norm(torch.inf))
 
         # compressed add
-        results.append((compressor.decompress(compressed_x + compressed_y) - (x + y)).norm(torch.inf))
+        results.append((decompressor(compressed_x + compressed_y) - (x + y)).norm(torch.inf))
 
         # compressed add scalar
-        results.append((compressor.decompress(compressed_x + 3.14159) - (x + 3.14159)).norm(torch.inf))
+        results.append((decompressor(compressed_x + 3.14159) - (x + 3.14159)).norm(torch.inf))
 
         # compressed multiply
-        results.append((compressor.decompress(compressed_x * 3.14159) - (x * 3.14159)).norm(torch.inf))
+        results.append((decompressor(compressed_x * 3.14159) - (x * 3.14159)).norm(torch.inf))
 
         # compressed dot
         results.append(abs((compressed_x.dot(compressed_y) - (x * y).sum())))
@@ -90,7 +95,6 @@ def _test():
 
         # compressed mean
         _ = compressed_x.mean()
-
         results.append(abs(compressed_x.mean() - x.mean()))
 
         # compressed variance
@@ -98,6 +102,9 @@ def _test():
 
         # compressed cosine similarity
         results.append(abs(compressed_x.cosine_similarity(compressed_y) - (x * y).sum() / (x.norm(2) * y.norm(2))))
+
+        # compressed covariance
+        results.append(abs(((x - x.mean()) * (y - y.mean())).mean() - compressed_x.covariance(compressed_y)))
 
         table.append(results)
 
@@ -116,12 +123,13 @@ def _test():
                 "mean",
                 "variance",
                 "cosine",
+                "covariance",
             ),
         )
     )
 
 
-class Compressor:
+class PyBlaz(torch.nn.Module):
     """
     compressor inspired by https://arxiv.org/abs/2202.13007
 
@@ -130,15 +138,6 @@ class Compressor:
 
     We also make the normalize step optional and off by default.
     By skipping it, compressed space linear operations are facilitated.
-
-
-    Other features include
-    * Arbitrary dimensionality
-    * GPU support
-    * Variable data type for coefficient indices
-
-    To do:
-    * Dropping certain indices to save space. Currently, we use all indices.
     """
 
     def __init__(
@@ -150,111 +149,26 @@ class Compressor:
         mask: torch.Tensor = None,
         device: torch.device = torch.device("cuda"),
         transform_tensor_directory: pathlib.Path = pathlib.Path("temp") / "transform_tensors",
+        *args,
+        **kwargs,
     ):
+        super().__init__(*args, **kwargs)
         self.block_shape = block_shape
         self.log_2_block_shape = tuple(size.bit_length() - 1 for size in self.block_shape)
         self.transform = transform
         self.n_dimensions = len(block_shape)
         self.dtype = dtype
         self.index_dtype = index_dtype
+        self.device = device
         self.mask = (
             mask.type(torch.bool).to(device)
             if mask is not None
             else torch.ones(block_shape, dtype=torch.bool, device=device)
         )
-        self.device = device
         self.transform_tensor_directory = transform_tensor_directory
 
         self.transformer_tensor = None
         self.inverse_transformer_tensor = None
-
-    def compress(self, tensor: torch.Tensor) -> CompressedTensor:
-        """
-        Compress the tensor.
-
-        :param tensor: uncompressed tensor
-        :returns: compressed tensor
-        """
-        assert self.n_dimensions == len(tensor.shape), (
-            f"Compressor dimensionality ({self.n_dimensions}) "
-            f"must match tensor dimensionality ({len(tensor.shape)})."
-        )
-
-        blocked = self.block(tensor)
-        # If there is pruning, it is faster to calculate all coefficients and then drop some.
-        indicess, biggest_coefficients = self.bin(self.blockwise_transform(blocked)[..., self.mask])
-        return CompressedTensor(tensor.shape, biggest_coefficients, indicess, self.mask)
-
-    def decompress(self, compressed_tensor: CompressedTensor):
-        """
-        This isn't blockwise complete decompression. Some things are better done over the whole tensor.
-        """
-        assert self.n_dimensions == compressed_tensor.n_dimensions, (
-            f"Compressor dimensionality ({self.n_dimensions}) "
-            f"must match tensor dimensionality ({compressed_tensor.n_dimensions})."
-        )
-        coefficientss = torch.zeros(
-            compressed_tensor.blocks_shape + compressed_tensor.block_shape, dtype=self.dtype, device=self.device
-        )
-        coefficientss[..., compressed_tensor.mask] = self.bin_inverse(compressed_tensor)
-
-        unblocked = self.block_inverse(self.blockwise_transform(coefficientss, inverse=True))
-
-        return eval(f"unblocked[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
-
-    def block(self, unblocked: torch.Tensor) -> torch.Tensor:
-        """
-        Section II.a
-        Block Splitting
-        :param unblocked: uncompressed tensor
-        :return: tensor of shape blocks' shape followed by block shape.
-        """
-        padded = torch.nn.functional.pad(
-            unblocked,
-            list(
-                itertools.chain(
-                    *(
-                        (0, (block_size - size) % block_size)
-                        for size, block_size in zip(reversed(unblocked.shape), reversed(self.block_shape))
-                    )
-                )
-            ),
-        )
-
-        blocks_shape = tuple(
-            unblocked_size >> log_2_block_size
-            for unblocked_size, log_2_block_size in zip(padded.shape, self.log_2_block_shape)
-        )
-
-        blocked = torch.zeros(blocks_shape + self.block_shape, dtype=self.dtype, device=self.device)
-        for intrablock_index in itertools.product(*(range(size) for size in self.block_shape)):
-            selection_string = ",".join(
-                f"{intrablock_index_element}::{block_size}"
-                for intrablock_index_element, block_size in zip(intrablock_index, self.block_shape)
-            )
-            blocked[(...,) + intrablock_index] = eval(f"padded[{selection_string}]")
-
-        return blocked
-
-    def block_inverse(self, blocked: torch.Tensor) -> torch.Tensor:
-        """
-        Reshape the blocked form tensor into unblocked form.
-
-        :param blocked: tensor of shape blocks' shape followed by block shape.
-        :return: unblocked tensor
-        """
-        unblocked_shape = (
-            *(n_blocks << size for n_blocks, size in zip(blocked.shape[: self.n_dimensions], self.log_2_block_shape)),
-        )
-        unblocked = torch.zeros(unblocked_shape, dtype=self.dtype, device=self.device)
-        for intrablock_index in itertools.product(*(range(size) for size in self.block_shape)):
-            selection_string = ",".join(
-                f"{intrablock_index_element}::{block_size}"
-                for intrablock_index_element, block_size in zip(intrablock_index, self.block_shape)
-            )
-            exec(f"unblocked[{selection_string}] = blocked[(...,) + intrablock_index]")
-
-        return unblocked
 
     def blockwise_transform(self, blocked_tensor: torch.Tensor, inverse=False) -> torch.Tensor:
         """
@@ -316,6 +230,63 @@ class Compressor:
             tuple(range(self.n_dimensions)) + tuple(range(2 * self.n_dimensions, 3 * self.n_dimensions)),
         )
 
+
+class Compressor(PyBlaz):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self = torch.compile(self)
+
+    def forward(self, tensor):
+        """
+        Compress the tensor.
+
+        :param tensor: uncompressed tensor
+        :returns: compressed tensor
+        """
+        assert self.n_dimensions == len(tensor.shape), (
+            f"Compressor dimensionality ({self.n_dimensions}) "
+            f"must match tensor dimensionality ({len(tensor.shape)})."
+        )
+
+        blocked = self.block(tensor)
+        # If there is pruning, it is faster to calculate all coefficients and then drop some.
+        indicess, biggest_coefficients = self.bin(self.blockwise_transform(blocked)[..., self.mask])
+        return CompressedTensor(tensor.shape, biggest_coefficients, indicess, self.mask)
+
+    def block(self, unblocked: torch.Tensor) -> torch.Tensor:
+        """
+        Section II.a
+        Block Splitting
+        :param unblocked: uncompressed tensor
+        :return: tensor of shape blocks' shape followed by block shape.
+        """
+        padded = torch.nn.functional.pad(
+            unblocked,
+            list(
+                itertools.chain(
+                    *(
+                        (0, (block_size - size) % block_size)
+                        for size, block_size in zip(reversed(unblocked.shape), reversed(self.block_shape))
+                    )
+                )
+            ),
+        )
+
+        blocks_shape = tuple(
+            unblocked_size >> log_2_block_size
+            for unblocked_size, log_2_block_size in zip(padded.shape, self.log_2_block_shape)
+        )
+
+        blocked = torch.zeros(blocks_shape + self.block_shape, dtype=self.dtype, device=self.device)
+        for intrablock_index in itertools.product(*(range(size) for size in self.block_shape)):
+            selection_string = ",".join(
+                f"{intrablock_index_element}::{block_size}"
+                for intrablock_index_element, block_size in zip(intrablock_index, self.block_shape)
+            )
+            blocked[(...,) + intrablock_index] = eval(f"padded[{selection_string}]")
+
+        return blocked
+
     def bin(self, coefficientss: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Blockwise binning according to Compressor.block_shape and Compressor.index_dtype
@@ -330,6 +301,48 @@ class Compressor:
             .round()
             .type(self.index_dtype)
         ), biggest_coefficients
+
+class Decompressor(PyBlaz):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self = torch.compile(self)
+
+    def forward(self, compressed_tensor):
+        """
+        This isn't blockwise complete decompression. Some things are better done over the whole tensor.
+        """
+        assert self.n_dimensions == compressed_tensor.n_dimensions, (
+            f"Compressor dimensionality ({self.n_dimensions}) "
+            f"must match tensor dimensionality ({compressed_tensor.n_dimensions})."
+        )
+        coefficientss = torch.zeros(
+            compressed_tensor.blocks_shape + compressed_tensor.block_shape, dtype=self.dtype, device=self.device
+        )
+        coefficientss[..., compressed_tensor.mask] = self.bin_inverse(compressed_tensor)
+
+        unblocked = self.block_inverse(self.blockwise_transform(coefficientss, inverse=True))
+
+        return eval(f"unblocked[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
+
+    def block_inverse(self, blocked: torch.Tensor) -> torch.Tensor:
+        """
+        Reshape the blocked form tensor into unblocked form.
+
+        :param blocked: tensor of shape blocks' shape followed by block shape.
+        :return: unblocked tensor
+        """
+        unblocked_shape = (
+            *(n_blocks << size for n_blocks, size in zip(blocked.shape[: self.n_dimensions], self.log_2_block_shape)),
+        )
+        unblocked = torch.zeros(unblocked_shape, dtype=self.dtype, device=self.device)
+        for intrablock_index in itertools.product(*(range(size) for size in self.block_shape)):
+            selection_string = ",".join(
+                f"{intrablock_index_element}::{block_size}"
+                for intrablock_index_element, block_size in zip(intrablock_index, self.block_shape)
+            )
+            exec(f"unblocked[{selection_string}] = blocked[(...,) + intrablock_index]")
+
+        return unblocked
 
     def bin_inverse(self, compressed_tensor: CompressedTensor) -> torch.Tensor:
         """

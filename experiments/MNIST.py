@@ -1,4 +1,4 @@
-from compression import Compressor
+from pyblaz.compression import PyBlaz
 
 import torch
 import torchvision
@@ -11,7 +11,7 @@ def _test():
     dtype = torch.float64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    compressor = Compressor(block_shape=(4, 4), dtype=dtype, device=device)
+    compressor = PyBlaz(block_shape=(4, 4), dtype=dtype, device=device)
 
     dataset = torchvision.datasets.MNIST(root="data", train=False, download=True)
 

@@ -4,7 +4,7 @@ import pathlib
 import torch
 import tqdm
 
-import compression
+from pyblaz import compression
 
 
 def main():
@@ -42,14 +42,14 @@ def main():
     dtype = dtypes[args.dtype]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    compressor_normalize = compression.Compressor(
+    compressor_normalize = compression.PyBlaz(
         block_shape=(args.block_size,) * args.dimensions,
         dtype=dtype,
         index_dtype=index_dtypes[args.index_dtype],
         do_differentiate=True,
         device=device,
     )
-    compressor_no_normalize = compression.Compressor(
+    compressor_no_normalize = compression.PyBlaz(
         block_shape=(args.block_size,) * args.dimensions,
         dtype=dtype,
         index_dtype=index_dtypes[args.index_dtype],
@@ -85,8 +85,7 @@ def main():
         )
 
     with open(
-        results_save_path
-        / f"whether_normalize_{'x'.join(str(size) for size in compressor_normalize.block_shape)}_"
+        results_save_path / f"whether_normalize_{'x'.join(str(size) for size in compressor_normalize.block_shape)}_"
         f"{args.dtype}_"
         f"{args.index_dtype}.csv",
         "w",

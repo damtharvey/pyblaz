@@ -6,7 +6,7 @@ import time
 
 import tqdm
 
-import compression
+from pyblaz import compression
 import torch
 
 
@@ -53,7 +53,7 @@ def main():
                         key=lambda coordinates: sum(coordinates),
                     )[:n_coefficients]:
                         mask[index] = True
-                    compressor = compression.Compressor(
+                    compressor = compression.PyBlaz(
                         block_shape=block_shape,
                         dtype=dtype,
                         index_dtype=index_dtype,

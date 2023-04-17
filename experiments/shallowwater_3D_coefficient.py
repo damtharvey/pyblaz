@@ -1,23 +1,12 @@
-from cProfile import label
-from compression import Compressor
-import matplotlib.pyplot as plt
-import numpy as np
-from numpy import linalg as LA
+from pyblaz.compression import PyBlaz
 
 import torch
-from mpl_toolkits import mplot3d
 
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import axes3d
-import seaborn as sns
-
-import random
-from scipy.stats import gaussian_kde
 
 
 def diagonalOrder(arr, n, m):
-
     ordering_elements = [[] for i in range(n + m - 1)]
 
     for i in range(m):
@@ -77,7 +66,7 @@ for timestep in range(len(time)):
     dtype = torch.float64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    compressor = Compressor(block_shape=(128, 128), dtype=dtype, device=device)
+    compressor = PyBlaz(block_shape=(128, 128), dtype=dtype, device=device)
 
     a = torch.FloatTensor(final_list0)
     b = torch.FloatTensor(final_list1)
@@ -110,7 +99,6 @@ ax.set_zlabel("Timestep")
 colors = plt.cm.rainbow(np.linspace(0, 1, 20))
 
 for plot in range(len(coefficients)):
-
     # plt.hist(, density=True)
     # plt.show()
     # density = gaussian_kde(sum(coefficients[plot].numpy().flatten()))

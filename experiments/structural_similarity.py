@@ -3,7 +3,7 @@ import pathlib
 
 import tqdm
 
-import compression
+from pyblaz import compression
 import torch
 
 
@@ -53,7 +53,7 @@ def main():
     #     key=lambda coordinates: sum(coordinates),
     # )[:n_coefficients]:
     #     mask[index] = True
-    compressor = compression.Compressor(
+    compressor = compression.PyBlaz(
         block_shape=block_shape,
         dtype=dtype,
         index_dtype=index_dtypes[args.index_dtype],
@@ -67,7 +67,6 @@ def main():
         tuple(1 << p for p in range(args.block_size.bit_length() - 1, args.max_size.bit_length())),
         desc=f"{args.dimensions}D",
     ):
-
         x = (
             (10 * (torch.randn((size,) * args.dimensions) * torch.randn((1,)) + torch.randn((1,))))
             .type(dtype)
@@ -88,17 +87,17 @@ def main():
         compressed_y = compressor.compress(y)
 
         compressed_covariance = compressed_x.covariance(compressed_y)
-        compressed_structural_similarity = compressed_x.structural_similarity(
-            compressed_y, dynamic_range=dynamic_range
-        )
+        compressed_structural_similarity = compressed_x.structural_similarity(compressed_y, dynamic_range=dynamic_range)
 
         to_write.append(
-                    ",".join([
-                        str(size),
-                        str(float((covariance_ - compressed_covariance).norm(torch.inf))),
-                        str(float((structural_similarity_ - compressed_structural_similarity).norm(torch.inf)))
-                    ])
-                )
+            ",".join(
+                [
+                    str(size),
+                    str(float((covariance_ - compressed_covariance).norm(torch.inf))),
+                    str(float((structural_similarity_ - compressed_structural_similarity).norm(torch.inf))),
+                ]
+            )
+        )
 
     with open(
         results_save_path / f"bs{args.block_size}_{str(dtype)[6:]}.csv",
