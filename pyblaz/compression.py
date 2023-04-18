@@ -60,8 +60,8 @@ def _test():
     ):
         results = [size]
 
-        x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
-        y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device)
+        x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device) - 1
+        y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device) + 2
 
         # compress
         compressed_x = compressor.compress(x)
@@ -266,7 +266,7 @@ class Compressor(torch.nn.Module):
         :param unblocked: uncompressed tensor
         :return: tensor of shape blocks' shape followed by block shape.
         """
-        padded = torch.nn.functional.pad(
+        stack = torch.nn.functional.pad(
             unblocked,
             list(
                 itertools.chain(
@@ -277,21 +277,9 @@ class Compressor(torch.nn.Module):
                 )
             ),
         )
-
-        blocks_shape = tuple(
-            unblocked_size >> log_2_block_size
-            for unblocked_size, log_2_block_size in zip(padded.shape, self.codec.log_2_block_shape)
-        )
-
-        blocked = torch.zeros(blocks_shape + self.codec.block_shape, dtype=self.codec.dtype, device=self.codec.device)
-        for intrablock_index in itertools.product(*(range(size) for size in self.codec.block_shape)):
-            selection_string = ",".join(
-                f"{intrablock_index_element}::{block_size}"
-                for intrablock_index_element, block_size in zip(intrablock_index, self.codec.block_shape)
-            )
-            blocked[(...,) + intrablock_index] = eval(f"padded[{selection_string}]")
-
-        return blocked
+        for dimension in range(unblocked.dim() - 1, -1, -1):
+            stack = torch.stack(torch.split(stack, self.codec.block_shape[dimension], unblocked.dim() - 1))
+        return stack
 
     def bin(self, coefficientss: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
