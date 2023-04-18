@@ -235,7 +235,7 @@ class PyBlaz:
 class Compressor(torch.nn.Module):
     def __init__(
         self,
-            codec: PyBlaz,
+        codec: PyBlaz,
         *args,
         **kwargs,
     ):
@@ -266,19 +266,20 @@ class Compressor(torch.nn.Module):
         :param unblocked: uncompressed tensor
         :return: tensor of shape blocks' shape followed by block shape.
         """
+        reversed_block_shape = tuple(reversed(self.codec.block_shape))
         stack = torch.nn.functional.pad(
             unblocked,
-            list(
+            tuple(
                 itertools.chain(
                     *(
                         (0, (block_size - size) % block_size)
-                        for size, block_size in zip(reversed(unblocked.shape), reversed(self.codec.block_shape))
+                        for size, block_size in zip(reversed(unblocked.shape), reversed_block_shape)
                     )
                 )
             ),
         )
-        for dimension in range(unblocked.dim() - 1, -1, -1):
-            stack = torch.stack(torch.split(stack, self.codec.block_shape[dimension], unblocked.dim() - 1))
+        for block_size in reversed_block_shape:
+            stack = torch.stack(torch.split(stack, block_size, self.codec.n_dimensions - 1))
         return stack
 
     def bin(self, coefficientss: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -300,7 +301,7 @@ class Compressor(torch.nn.Module):
 class Decompressor(torch.nn.Module):
     def __init__(
         self,
-            codec: PyBlaz,
+        codec: PyBlaz,
         *args,
         **kwargs,
     ):
@@ -316,7 +317,9 @@ class Decompressor(torch.nn.Module):
             f"must match tensor dimensionality ({compressed_tensor.n_dimensions})."
         )
         coefficientss = torch.zeros(
-            compressed_tensor.blocks_shape + compressed_tensor.block_shape, dtype=self.codec.dtype, device=self.codec.device
+            compressed_tensor.blocks_shape + compressed_tensor.block_shape,
+            dtype=self.codec.dtype,
+            device=self.codec.device,
         )
         coefficientss[..., compressed_tensor.mask] = self.bin_inverse(compressed_tensor)
 
@@ -331,8 +334,8 @@ class Decompressor(torch.nn.Module):
         :param blocked: tensor of shape blocks' shape followed by block shape.
         :return: unblocked tensor
         """
-        unblocked_shape = (
-            *(n_blocks << size for n_blocks, size in zip(blocked.shape[: self.codec.n_dimensions], self.codec.log_2_block_shape)),
+        unblocked_shape = tuple(
+            n_blocks << size for n_blocks, size in zip(blocked.shape[:-1], self.codec.log_2_block_shape)
         )
         unblocked = torch.zeros(unblocked_shape, dtype=self.codec.dtype, device=self.codec.device)
         for intrablock_index in itertools.product(*(range(size) for size in self.codec.block_shape)):
