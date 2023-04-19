@@ -1,5 +1,6 @@
 /data/MNIST
 /__pycache__/
 /temp/
+/.idea/
 /.vscode/
 /data/lgg-mri-segmentation/
