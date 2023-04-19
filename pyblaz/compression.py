@@ -324,8 +324,10 @@ class Decompressor(torch.nn.Module):
         coefficientss[..., compressed_tensor.mask] = self.bin_inverse(compressed_tensor)
 
         unblocked = self.block_inverse(self.codec.blockwise_transform(coefficientss, inverse=True))
-
-        return eval(f"unblocked[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
+        if unblocked.shape != compressed_tensor.original_shape:
+            return eval(f"unblocked[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
+        else:
+            return unblocked
 
     def block_inverse(self, blocked: torch.Tensor) -> torch.Tensor:
         """

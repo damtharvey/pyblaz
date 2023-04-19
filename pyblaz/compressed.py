@@ -13,7 +13,7 @@ def _test():
 
 
 class CompressedBlock:
-    def __init__(self, biggest_coefficient, indices):
+    def __init__(self, biggest_coefficient: float, indices: torch.Tensor):
         self.biggest_coefficient = biggest_coefficient
         self.indices = indices
 
@@ -55,8 +55,9 @@ class CompressedTensor:
         )
         if coefficients_blocks.isnan().any():
             coefficients_blocks = (
-                self.biggest_coefficients[..., None]
+                1
                 / INDICES_RADIUS[self.indicess.dtype]
+                * self.biggest_coefficients[..., None]
                 * self.indicess.type(self.biggest_coefficients.dtype)
             )
         return coefficients_blocks
@@ -105,11 +106,7 @@ class CompressedTensor:
         return CompressedTensor(self.original_shape, proportion_of_radius, indices, self.mask)
 
     def add_scalar(self, other):
-        coefficientss = (
-            self.indicess.type(self.biggest_coefficients.dtype)
-            * self.biggest_coefficients[..., None]
-            / INDICES_RADIUS[self.indicess.dtype]
-        )
+        coefficientss = self.coefficientss
         coefficientss[..., 0] += other * torch.prod(torch.tensor(self.block_shape) ** 0.5)
         biggest_coefficients = coefficientss.norm(torch.inf, -1)
         indices = (
@@ -152,56 +149,25 @@ class CompressedTensor:
         """
         assert torch.equal(self.mask, other.mask), "Masks must match between tensors that will be dotted...for now."
 
-        dot_product = (
-            (
-                self.indicess.type(self.biggest_coefficients.dtype)
-                * (self.biggest_coefficients[..., None] / INDICES_RADIUS[self.indicess.dtype])
-            )
-            * (
-                other.indicess.type(other.biggest_coefficients.dtype)
-                * (other.biggest_coefficients[..., None] / INDICES_RADIUS[other.indicess.dtype])
-            )
-        ).sum()
-        if not dot_product.isnan():
-            return dot_product
-        else:
-            return (
-                (
-                    (self.biggest_coefficients[..., None] / INDICES_RADIUS[self.indicess.dtype])
-                    * self.indicess.type(self.biggest_coefficients.dtype)
-                )
-                * (
-                    (other.biggest_coefficients[..., None] / INDICES_RADIUS[other.indicess.dtype])
-                    * other.indicess.type(other.biggest_coefficients.dtype)
-                )
-            ).sum()
-
-    def log(self):
-        # log_indicess = torch.log(self.indicess)
-        log_coeff = torch.log(self.biggest_coefficients)
-        return CompressedTensor(self.original_shape, log_coeff, self.indicess, self.mask)
+        return (self.coefficientss * other.coefficientss).sum()
 
     def norm_2(self) -> float:
         """
         :returns: the L_2 norm.
         """
         # Faster than self.dot(self) ** 0.5
-        magnitude = (
-            self.indicess.type(self.biggest_coefficients.dtype)
-            * self.biggest_coefficients[..., None]
-            / INDICES_RADIUS[self.indicess.dtype]
-        ).norm(2)
-        if not magnitude.isnan():
-            return magnitude
-        else:
-            return (
-                self.biggest_coefficients[..., None]
-                / INDICES_RADIUS[self.indicess.dtype]
-                * self.indicess.type(self.biggest_coefficients.dtype)
-            ).norm(2)
+        return self.coefficientss.norm(2)
 
     def cosine_similarity(self, other) -> float:
-        return self.dot(other) / (self.norm_2() * other.norm_2())
+        """
+        :returns: the cosine similarity between self and other.
+        """
+        # Faster than self.dot(other) / (self.norm_2() * other.norm_2())
+        self_coefficientss = self.coefficientss
+        other_coefficientss = other.coefficientss
+        return (self_coefficientss * other_coefficientss).sum() / (
+            self_coefficientss.norm(2) * other_coefficientss.norm(2)
+        )
 
     def mean(self) -> float:
         """
@@ -222,8 +188,9 @@ class CompressedTensor:
         else:
             return (
                 (
-                    self.biggest_coefficients
+                    1
                     / INDICES_RADIUS[self.indicess.dtype]
+                    * self.biggest_coefficients
                     * self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
                 ).sum()
                 / torch.prod(torch.tensor(self.blocks_shape))
@@ -235,19 +202,20 @@ class CompressedTensor:
         :returns: the blockwise mean of the compressed tensor.
         """
 
-        first_coefficients_sum = (
+        first_coefficients = (
             self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
             * self.biggest_coefficients
             / INDICES_RADIUS[self.indicess.dtype]
         )
 
-        if not torch.isnan(first_coefficients_sum).any():
-            return first_coefficients_sum / torch.prod(torch.tensor(self.block_shape) ** 0.5)
+        if not torch.isnan(first_coefficients).any():
+            return first_coefficients / torch.prod(torch.tensor(self.block_shape) ** 0.5)
 
         else:
             return (
-                self.biggest_coefficients
+                1
                 / INDICES_RADIUS[self.indicess.dtype]
+                * self.biggest_coefficients
                 * self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
             ) / torch.prod(torch.tensor(self.block_shape) ** 0.5)
 
