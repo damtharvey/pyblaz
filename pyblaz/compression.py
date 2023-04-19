@@ -334,17 +334,12 @@ class Decompressor(torch.nn.Module):
         :param blocked: tensor of shape blocks' shape followed by block shape.
         :return: unblocked tensor
         """
-        unblocked_shape = tuple(
-            n_blocks << size for n_blocks, size in zip(blocked.shape[:-1], self.codec.log_2_block_shape)
-        )
-        unblocked = torch.zeros(unblocked_shape, dtype=self.codec.dtype, device=self.codec.device)
-        for intrablock_index in itertools.product(*(range(size) for size in self.codec.block_shape)):
-            selection_string = ",".join(
-                f"{intrablock_index_element}::{block_size}"
-                for intrablock_index_element, block_size in zip(intrablock_index, self.codec.block_shape)
+        unblocked = blocked
+        for dimension in range(self.codec.n_dimensions):
+            unblocked = torch.cat(
+                tuple(unblocked[block_index] for block_index in range(blocked.shape[dimension])),
+                -self.codec.n_dimensions + dimension,
             )
-            exec(f"unblocked[{selection_string}] = blocked[(...,) + intrablock_index]")
-
         return unblocked
 
     def bin_inverse(self, compressed_tensor: CompressedTensor) -> torch.Tensor:
