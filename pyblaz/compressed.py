@@ -83,10 +83,10 @@ class CompressedTensor:
         :returns: sum of two compressed tensors or of a compressed tensor and a scalar
         """
         if isinstance(other, CompressedTensor):
-            assert self.original_shape == other.original_shape and self.block_shape == other.block_shape, (
-                f"Original shapes and block shapes must match. "
-                f"Got original shapes {self.original_shape} and {other.original_shape}, "
-                f"block shapes {self.block_shape} and {other.block_shape}."
+            assert self.original_shape == other.original_shape, (
+                f"Original shapes and masks must match. "
+                f"Got original shapes {self.original_shape} and {other.original_shape}. "
+                f"For performance reasons, checking whether the masks match is skipped."
             )
             return self.add_tensor(other)
         elif isinstance(other, (float, int)) or (isinstance(other, torch.Tensor) and other.numel() == 1):
@@ -95,14 +95,20 @@ class CompressedTensor:
             raise TypeError(f"Add not defined between {type(self)} and {type(other)}.")
 
     def add_tensor(self, other):
-        assert torch.equal(self.mask, other.mask), "Masks must match between tensors that will be added."
+        """
+        :returns: the element-wise sum of self and another compressed tensor.
+
+        For performance reasons, checking whether the masks match is skipped.
+        """
+        # assert torch.equal(self.mask, other.mask), "Masks must match between tensors that will be added."
 
         indices = (
             self.indicess * self.biggest_coefficients[..., None]
             + other.indicess * other.biggest_coefficients[..., None]
         )
         proportion_of_radius = indices.norm(torch.inf, -1) / INDICES_RADIUS[self.indicess.dtype]
-        indices = torch.nan_to_num((indices / proportion_of_radius[..., None]).round().type(self.indicess.dtype))
+        indices = torch.nan_to_num(indices / proportion_of_radius[..., None]).round().type(self.indicess.dtype)
+
         return CompressedTensor(self.original_shape, proportion_of_radius, indices, self.mask)
 
     def add_scalar(self, other):

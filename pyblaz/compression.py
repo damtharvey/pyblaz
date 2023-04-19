@@ -4,7 +4,6 @@ import pathlib
 import torch
 import torch.nn
 import torch.nn.functional
-import tqdm
 
 import compressed
 import transforms
@@ -13,13 +12,15 @@ from compressed import CompressedTensor
 
 def _test():
     import argparse
+    import math
+    import time
+    import tqdm
     from tabulate import tabulate
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--dimensions", type=int, default=3)
     parser.add_argument("--block-size", type=int, default=8, help="size of a hypercubic block")
-    parser.add_argument("--max-size", type=int, default=256)
+    parser.add_argument("--max-size", type=int, default=512)
     parser.add_argument(
         "--dtype",
         type=str,
@@ -45,83 +46,123 @@ def _test():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     block_shape = (args.block_size,) * args.dimensions
+
+    # n_coefficients = int(math.prod(block_shape) * 0.5)
+    # mask = torch.zeros(block_shape, dtype=torch.bool)
+    # for index in sorted(
+    #     itertools.product(*(range(size) for size in block_shape)),
+    #     key=lambda coordinates: sum(coordinates),
+    # )[:n_coefficients]:
+    #     mask[index] = True
+
     compressor = PyBlaz(
         block_shape=block_shape,
         dtype=dtype,
         index_dtype=index_dtypes[args.index_dtype],
+        # mask=mask,
         device=device,
     )
 
-    table = []
+    time_table = []
+    error_table = []
+    headers = (
+        "size",
+        "codec",
+        "negate",
+        "add",
+        "add_scalar",
+        "multiply",
+        "dot",
+        "norm2",
+        "mean",
+        "variance",
+        "cosine",
+        "covariance",
+    )
 
     for size in tqdm.tqdm(
         tuple(1 << p for p in range(args.block_size.bit_length() - 1, args.max_size.bit_length())),
-        desc=f"time {args.dimensions}D",
+        desc=f"{args.dimensions}D",
     ):
         size += 1
-        results = [size]
+        time_results = [size]
+        error_results = [size]
 
         x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device) - 1
         y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device) + 2
 
         # compress
+        start_time = time.time()
         compressed_x = compressor.compress(x)
         compressed_y = compressor.compress(y)
-
-        results.append((compressor.decompress(compressed_x) - x).norm(torch.inf))
+        time_results.append(time.time() - start_time)
 
         # compressed negate
-        results.append((compressor.decompress(-compressed_x) + x).norm(torch.inf))
+        start_time = time.time()
+        r = -compressed_x
+        time_results.append(time.time() - start_time)
+        error_results.append((compressor.decompress(r) + x).norm(torch.inf))
 
         # compressed add
-        results.append((compressor.decompress(compressed_x + compressed_y) - (x + y)).norm(torch.inf))
+        start_time = time.time()
+        r = compressed_x + compressed_y
+        time_results.append(time.time() - start_time)
+        error_results.append((compressor.decompress(r) - (x + y)).norm(torch.inf))
 
         # compressed add scalar
-        results.append((compressor.decompress(compressed_x + 3.14159) - (x + 3.14159)).norm(torch.inf))
+        start_time = time.time()
+        r = compressed_x + 3.14159
+        time_results.append(time.time() - start_time)
+        error_results.append((compressor.decompress(r) - (x + 3.14159)).norm(torch.inf))
 
         # compressed multiply
-        results.append((compressor.decompress(compressed_x * 3.14159) - (x * 3.14159)).norm(torch.inf))
+        start_time = time.time()
+        r = compressed_x * 3.14159
+        time_results.append(time.time() - start_time)
+        error_results.append((compressor.decompress(r) - (x * 3.14159)).norm(torch.inf))
 
         # compressed dot
-        results.append(abs((compressed_x.dot(compressed_y) - (x * y).sum())))
+        start_time = time.time()
+        r = compressed_x.dot(compressed_y)
+        time_results.append(time.time() - start_time)
+        error_results.append(abs((r - (x * y).sum())))
 
         # compressed norm2
-        results.append(abs(compressed_x.norm_2() - x.norm(2)))
+        start_time = time.time()
+        r = compressed_x.norm_2()
+        time_results.append(time.time() - start_time)
+        error_results.append(abs(r - x.norm(2)))
 
         # compressed mean
-        _ = compressed_x.mean()
-        results.append(abs(compressed_x.mean() - x.mean()))
+        start_time = time.time()
+        r = compressed_x.mean()
+        time_results.append(time.time() - start_time)
+        error_results.append(abs(r - x.mean()))
 
         # compressed variance
-        results.append(abs(compressed_x.variance() - x.var(unbiased=False)))
+        start_time = time.time()
+        r = compressed_x.variance()
+        time_results.append(time.time() - start_time)
+        error_results.append(abs(r - x.var(unbiased=False)))
 
         # compressed cosine similarity
-        results.append(abs(compressed_x.cosine_similarity(compressed_y) - (x * y).sum() / (x.norm(2) * y.norm(2))))
+        start_time = time.time()
+        r = compressed_x.cosine_similarity(compressed_y)
+        time_results.append(time.time() - start_time)
+        error_results.append(abs(r - (x * y).sum() / (x.norm(2) * y.norm(2))))
 
         # compressed covariance
-        results.append(abs(((x - x.mean()) * (y - y.mean())).mean() - compressed_x.covariance(compressed_y)))
+        start_time = time.time()
+        r = compressed_x.covariance(compressed_y)
+        time_results.append(time.time() - start_time)
+        error_results.append(abs(r - ((x - x.mean()) * (y - y.mean())).mean()))
 
-        table.append(results)
+        time_table.append(time_results)
+        error_table.append(error_results)
 
-    print(
-        tabulate(
-            table,
-            headers=(
-                "size",
-                "codec",
-                "negate",
-                "add",
-                "add_scalar",
-                "multiply",
-                "dot",
-                "norm2",
-                "mean",
-                "variance",
-                "cosine",
-                "covariance",
-            ),
-        )
-    )
+    print("\ntime\n" + tabulate(time_table, headers=headers))
+
+    print("\nerror\n" + tabulate(error_table, headers=headers))
 
 
 class PyBlaz:
@@ -257,7 +298,10 @@ class Compressor(torch.nn.Module):
 
         blocked = self.block(tensor)
         # If there is pruning, it is faster to calculate all coefficients and then drop some.
-        indicess, biggest_coefficients = self.bin(self.codec.blockwise_transform(blocked)[..., self.codec.mask])
+        coefficientss = self.codec.blockwise_transform(blocked)[..., self.codec.mask]
+        del blocked
+        indicess, biggest_coefficients = self.bin(coefficientss)
+        del coefficientss
         return CompressedTensor(tensor.shape, biggest_coefficients, indicess, self.codec.mask)
 
     def block(self, unblocked: torch.Tensor) -> torch.Tensor:
@@ -322,9 +366,11 @@ class Decompressor(torch.nn.Module):
             dtype=self.codec.dtype,
             device=self.codec.device,
         )
-        coefficientss[..., compressed_tensor.mask] = self.bin_inverse(compressed_tensor)
+        #                                                              Inverse binning happens here.
+        coefficientss[..., compressed_tensor.mask] = compressed_tensor.coefficientss
 
         unblocked = self.block_inverse(self.codec.blockwise_transform(coefficientss, inverse=True))
+        del coefficientss
         if unblocked.shape != compressed_tensor.original_shape:
             for dimension in range(self.codec.n_dimensions):
                 unblocked = unblocked.split(compressed_tensor.original_shape[dimension], dimension)[0]
@@ -344,20 +390,6 @@ class Decompressor(torch.nn.Module):
                 -self.codec.n_dimensions + dimension,
             )
         return unblocked
-
-    def bin_inverse(self, compressed_tensor: CompressedTensor) -> torch.Tensor:
-        """
-        Blockwise mapping bins to values.
-
-        :returns: tuple of (bins, biggest coefficients).
-        Bins are shaped (block indices, coefficient indices).
-        Biggest coefficients are shaped (block indices).
-        """
-        return (
-            compressed_tensor.indicess.type(self.codec.dtype)
-            * compressed_tensor.biggest_coefficients[..., None]
-            / compressed.INDICES_RADIUS[compressed_tensor.indicess.dtype]
-        )
 
 
 if __name__ == "__main__":
