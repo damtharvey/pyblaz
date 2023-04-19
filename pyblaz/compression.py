@@ -58,6 +58,7 @@ def _test():
         tuple(1 << p for p in range(args.block_size.bit_length() - 1, args.max_size.bit_length())),
         desc=f"time {args.dimensions}D",
     ):
+        size += 1
         results = [size]
 
         x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device) - 1
@@ -325,9 +326,9 @@ class Decompressor(torch.nn.Module):
 
         unblocked = self.block_inverse(self.codec.blockwise_transform(coefficientss, inverse=True))
         if unblocked.shape != compressed_tensor.original_shape:
-            return eval(f"unblocked[{','.join(f':{size}' for size in compressed_tensor.original_shape)}]")
-        else:
-            return unblocked
+            for dimension in range(self.codec.n_dimensions):
+                unblocked = unblocked.split(compressed_tensor.original_shape[dimension], dimension)[0]
+        return unblocked
 
     def block_inverse(self, blocked: torch.Tensor) -> torch.Tensor:
         """
