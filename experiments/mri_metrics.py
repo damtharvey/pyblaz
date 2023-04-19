@@ -64,7 +64,7 @@ def main():
                 ):
                     # According to the dataset README, some examples are missing channels.
                     # FLAIR is available in all examples.
-                    flair = torch.load(example_path)[Channel.FLAIR].to(device)
+                    flair = torch.load(example_path)[Channel.FLAIR]
                     compressed_flair = compressor.compress(flair)
 
                     pretty_print_original_shape = "×".join(str(x) for x in flair.shape)
@@ -98,7 +98,7 @@ def main():
                     )
 
                     for other_example_index in range(example_index + 1, len(example_paths)):
-                        other_flair = torch.load(example_paths[other_example_index])[Channel.FLAIR].to(device)
+                        other_flair = torch.load(example_paths[other_example_index])[Channel.FLAIR]
 
                         if flair.shape[0] < other_flair.shape[0]:
                             # Don't want to compress again.
@@ -109,7 +109,6 @@ def main():
                             )
 
                         other_compressed_flair = compressor.compress(other_flair)
-                        other_pretty_print_original_shape = "×".join(str(x) for x in flair.shape)
                         to_write.append(
                             f"{pretty_print_original_shape},"
                             f"{pretty_print_float_type},"

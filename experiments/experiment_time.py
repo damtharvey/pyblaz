@@ -14,7 +14,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--max-size", type=int, default=8192)
-    parser.add_argument("--keep-proportion", type=float, default=0.5)
+    parser.add_argument("--keep-proportion", type=float, default=28 / 64)
     parser.add_argument("--results-path", type=str, default="results")
     parser.add_argument("--experiment-name", type=str, default="time")
     args = parser.parse_args()

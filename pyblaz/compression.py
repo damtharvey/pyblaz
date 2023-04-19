@@ -5,9 +5,8 @@ import torch
 import torch.nn
 import torch.nn.functional
 
-import compressed
 import transforms
-from compressed import CompressedTensor
+from compressed import CompressedTensor, INDICES_RADIUS
 
 
 def _test():
@@ -296,7 +295,7 @@ class Compressor(torch.nn.Module):
             f"must match tensor dimensionality ({len(tensor.shape)})."
         )
 
-        blocked = self.block(tensor)
+        blocked = self.block(tensor.to(self.codec.dtype).to(self.codec.device))
         # If there is pruning, it is faster to calculate all coefficients and then drop some.
         coefficientss = self.codec.blockwise_transform(blocked)[..., self.codec.mask]
         del blocked
@@ -337,7 +336,7 @@ class Compressor(torch.nn.Module):
         """
         biggest_coefficients = coefficientss.norm(torch.inf, -1)
         return (
-            (coefficientss * (compressed.INDICES_RADIUS[self.codec.index_dtype] / biggest_coefficients[..., None]))
+            (coefficientss * (INDICES_RADIUS[self.codec.index_dtype] / biggest_coefficients[..., None]))
             .round()
             .type(self.codec.index_dtype)
         ), biggest_coefficients

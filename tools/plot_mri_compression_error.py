@@ -145,7 +145,8 @@ def plot_legend(block_shapes, colors, index_type_markers, index_types, save_path
         legend.append(Patch(facecolor=color, label=f"{'×'.join(str(size) for size in block_shape)} blocks"))
     plt.legend(loc="center", ncol=len(legend) // 2, handles=legend)
     plt.gca().axis("off")
-    plt.savefig(save_path / f"mri_flair_legend.pdf")
+    plt.savefig(save_path / f"mri_flair_legend.png")
+    # plt.savefig(save_path / f"mri_flair_legend.pdf")
     # plt.show()
 
 
