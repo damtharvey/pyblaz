@@ -34,8 +34,13 @@ def main():
 
     keep_proportion = 1
 
-    to_write = ["original_shape,float_type,index_type,block_shape,keep_proportion,metric,error"]
-    for float_type in (torch.bfloat16, torch.float16, torch.float32, torch.float64):
+    to_write = ["original_shape,float_type,index_type,block_shape,keep_proportion,metric,absolute_error,relative_error"]
+    for float_type in (
+        # torch.bfloat16,
+        # torch.float16,
+        torch.float32,
+        torch.float64,
+    ):
         for index_type in (torch.int8, torch.int16):
             for block_shape in (4, 4, 4), (8, 8, 8), (16, 16, 16), (4, 8, 8), (4, 16, 16), (8, 16, 16):
                 # n_coefficients = int(math.prod(block_shape) * keep_proportion)
@@ -69,6 +74,9 @@ def main():
 
                     pretty_print_original_shape = "×".join(str(x) for x in flair.shape)
 
+                    true_metric = flair.mean()
+                    absolute_error = true_metric - compressed_flair.mean()
+                    relative_error = absolute_error / true_metric
                     to_write.append(
                         f"{pretty_print_original_shape},"
                         f"{pretty_print_float_type},"
@@ -76,8 +84,13 @@ def main():
                         f"{pretty_print_block_shape},"
                         f"{keep_proportion},"
                         f"mean,"
-                        f"{flair.mean() - compressed_flair.mean()}"
+                        f"{absolute_error},"
+                        f"{relative_error}"
                     )
+
+                    true_metric = flair.var(correction=0)
+                    absolute_error = true_metric - compressed_flair.variance()
+                    relative_error = absolute_error / true_metric
                     to_write.append(
                         f"{pretty_print_original_shape},"
                         f"{pretty_print_float_type},"
@@ -85,8 +98,13 @@ def main():
                         f"{pretty_print_block_shape},"
                         f"{keep_proportion},"
                         f"variance,"
-                        f"{flair.var(unbiased=False) - compressed_flair.variance()}"
+                        f"{absolute_error},"
+                        f"{relative_error}"
                     )
+
+                    true_metric = flair.norm(2)
+                    absolute_error = true_metric - compressed_flair.norm_2()
+                    relative_error = absolute_error / true_metric
                     to_write.append(
                         f"{pretty_print_original_shape},"
                         f"{pretty_print_float_type},"
@@ -94,21 +112,28 @@ def main():
                         f"{pretty_print_block_shape},"
                         f"{keep_proportion},"
                         f"norm_2,"
-                        f"{flair.norm(2) - compressed_flair.norm_2()}"
+                        f"{absolute_error},"
+                        f"{relative_error}"
                     )
 
                     for other_example_index in range(example_index + 1, len(example_paths)):
                         other_flair = torch.load(example_paths[other_example_index])[Channel.FLAIR]
 
                         if flair.shape[0] < other_flair.shape[0]:
-                            # Don't want to compress again.
-                            other_flair = other_flair[: flair.shape[0]]
+                            flair = torchfunctional.pad(flair, (0, 0, 0, 0, 0, other_flair.shape[0] - flair.shape[0]))
+                            compressed_flair = compressor.compress(flair)
+
                         elif flair.shape[0] > other_flair.shape[0]:
                             other_flair = torchfunctional.pad(
                                 other_flair, (0, 0, 0, 0, 0, flair.shape[0] - other_flair.shape[0])
                             )
 
                         other_compressed_flair = compressor.compress(other_flair)
+                        true_metric = ssim.structural_similarity(flair, other_flair, dynamic_range=MRI_DYNAMIC_RANGE)
+                        absolute_error = true_metric - compressed_flair.structural_similarity(
+                            other_compressed_flair, dynamic_range=MRI_DYNAMIC_RANGE
+                        )
+                        relative_error = absolute_error / true_metric
                         to_write.append(
                             f"{pretty_print_original_shape},"
                             f"{pretty_print_float_type},"
@@ -116,7 +141,8 @@ def main():
                             f"{pretty_print_block_shape},"
                             f"{keep_proportion},"
                             f"structural_similarity,"
-                            f"{ssim.structural_similarity(flair, other_flair, dynamic_range=MRI_DYNAMIC_RANGE) - compressed_flair.structural_similarity(other_compressed_flair, dynamic_range=MRI_DYNAMIC_RANGE)}"
+                            f"{absolute_error},"
+                            f"{relative_error}"
                         )
 
     with open(results_path / "mri_metrics.csv", "w") as file:
