@@ -43,25 +43,6 @@ class CompressedTensor:
     def block_shape(self) -> tuple[int, ...]:
         return self.mask.shape
 
-    @property
-    def coefficientss(self) -> torch.Tensor:
-        """
-        :returns: coefficient blocks of the compressed tensor, obtained through partial decompression
-        """
-        coefficients_blocks = (
-            self.indicess.type(self.biggest_coefficients.dtype)
-            * self.biggest_coefficients[..., None]
-            / INDICES_RADIUS[self.indicess.dtype]
-        )
-        if coefficients_blocks.isnan().any():
-            coefficients_blocks = (
-                1
-                / INDICES_RADIUS[self.indicess.dtype]
-                * self.biggest_coefficients[..., None]
-                * self.indicess.type(self.biggest_coefficients.dtype)
-            )
-        return coefficients_blocks
-
     def __getitem__(self, item: tuple[int, ...] or int) -> CompressedBlock:
         """
         :returns: compressed block at the indices
@@ -112,7 +93,7 @@ class CompressedTensor:
         return CompressedTensor(self.original_shape, proportion_of_radius, indices, self.mask)
 
     def add_scalar(self, other):
-        coefficientss = self.coefficientss
+        coefficientss = self.specified_coefficientss()
         coefficientss[..., 0] += other * torch.prod(torch.tensor(self.block_shape) ** 0.5)
         biggest_coefficients = coefficientss.norm(torch.inf, -1)
         indices = (
@@ -155,22 +136,22 @@ class CompressedTensor:
         """
         assert torch.equal(self.mask, other.mask), "Masks must match between tensors that will be dotted...for now."
 
-        return (self.coefficientss * other.coefficientss).sum()
+        return (self.specified_coefficientss() * other.specified_coefficientss()).sum()
 
     def norm_2(self) -> float:
         """
         :returns: the L_2 norm.
         """
         # Faster than self.dot(self) ** 0.5
-        return self.coefficientss.norm(2)
+        return self.specified_coefficientss().norm(2)
 
     def cosine_similarity(self, other) -> float:
         """
         :returns: the cosine similarity between self and other.
         """
         # Faster than self.dot(other) / (self.norm_2() * other.norm_2())
-        self_coefficientss = self.coefficientss
-        other_coefficientss = other.coefficientss
+        self_coefficientss = self.specified_coefficientss()
+        other_coefficientss = other.specified_coefficientss()
         return (self_coefficientss * other_coefficientss).sum() / (
             self_coefficientss.norm(2) * other_coefficientss.norm(2)
         )
@@ -180,7 +161,7 @@ class CompressedTensor:
         :returns: the arithmetic mean of the compressed tensor.
         """
         first_coefficients_sum = (
-            self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
+            self.indicess[..., 0].type(self.biggest_coefficients.dtype)
             * self.biggest_coefficients
             / INDICES_RADIUS[self.indicess.dtype]
         ).sum()
@@ -197,7 +178,7 @@ class CompressedTensor:
                     1
                     / INDICES_RADIUS[self.indicess.dtype]
                     * self.biggest_coefficients
-                    * self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
+                    * self.indicess[..., 0].type(self.biggest_coefficients.dtype)
                 ).sum()
                 / torch.prod(torch.tensor(self.blocks_shape))
                 / torch.prod(torch.tensor(self.block_shape) ** 0.5)
@@ -209,7 +190,7 @@ class CompressedTensor:
         """
 
         first_coefficients = (
-            self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
+            self.indicess[..., 0].type(self.biggest_coefficients.dtype)
             * self.biggest_coefficients
             / INDICES_RADIUS[self.indicess.dtype]
         )
@@ -222,7 +203,7 @@ class CompressedTensor:
                 1
                 / INDICES_RADIUS[self.indicess.dtype]
                 * self.biggest_coefficients
-                * self.indicess.type(self.biggest_coefficients.dtype)[..., 0]
+                * self.indicess[..., 0].type(self.biggest_coefficients.dtype)
             ) / torch.prod(torch.tensor(self.block_shape) ** 0.5)
 
     def covariance(self, other, sample: bool = False) -> float:
@@ -230,11 +211,13 @@ class CompressedTensor:
         :param other: other CompressedTensor to return covariance with
         :param sample: whether to return the sample covariance
         :returns: the covariance of this CompressedTensor with another
+
+        # TODO: Make this have a correction parameter like PyTorch 2.0.
         """
         assert torch.equal(self.mask, other.mask), "Masks must match between tensors to get covariance...for now."
 
-        self_coefficientss = self.coefficientss
-        other_coefficientss = other.coefficientss
+        self_coefficientss = self.specified_coefficientss()
+        other_coefficientss = other.specified_coefficientss()
 
         self_coefficientss[..., 0] -= self_coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
         other_coefficientss[..., 0] -= other_coefficientss[..., 0].sum() / torch.prod(torch.tensor(other.blocks_shape))
@@ -249,9 +232,11 @@ class CompressedTensor:
         """
         :param sample: whether to return the sample variance
         :returns: the variance of the compressed tensor
+
+        # TODO: Make this have a correction parameter like PyTorch 2.0.
         """
         # Faster than self.covariance(self)
-        coefficientss = self.coefficientss
+        coefficientss = self.specified_coefficientss()
         coefficientss[..., 0] -= coefficientss[..., 0].sum() / torch.prod(torch.tensor(self.blocks_shape))
 
         variance = (coefficientss**2).mean()
@@ -261,6 +246,12 @@ class CompressedTensor:
             return variance
 
     def standard_deviation(self, sample: bool = False) -> float:
+        """
+        :param sample: whether to return the sample standard deviation
+        :returns: the standard deviation of the compressed tensor
+
+        # TODO: Make this have a correction parameter like PyTorch 2.0.
+        """
         return self.variance(sample) ** 0.5
 
     def structural_similarity(
@@ -322,7 +313,7 @@ class CompressedTensor:
         :param sample: whether to return the sample variance
         :returns: the blockwise variance matrix of the  compressed tensor
         """
-        coefficientss = self.coefficientss
+        coefficientss = self.specified_coefficientss()
         variance = (coefficientss**2).mean(-1)
 
         if sample:
@@ -332,6 +323,24 @@ class CompressedTensor:
 
     def standard_deviation_blockwise(self, sample: bool = False) -> torch.Tensor:
         return self.variance_blockwise(sample) ** 0.5
+
+    def specified_coefficientss(self) -> torch.Tensor:
+        """
+        :returns: blockwise specified coefficients of the compressed tensor
+        """
+        coefficients_blocks = (
+            self.indicess.type(self.biggest_coefficients.dtype)
+            * self.biggest_coefficients[..., None]
+            / INDICES_RADIUS[self.indicess.dtype]
+        )
+        if coefficients_blocks.isnan().any():
+            coefficients_blocks = (
+                1
+                / INDICES_RADIUS[self.indicess.dtype]
+                * self.biggest_coefficients[..., None]
+                * self.indicess.type(self.biggest_coefficients.dtype)
+            )
+        return coefficients_blocks
 
 
 if __name__ == "__main__":

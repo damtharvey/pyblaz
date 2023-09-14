@@ -11,7 +11,6 @@ from compressed import CompressedTensor, INDICES_RADIUS
 
 def _test():
     import argparse
-    import math
     import time
     import tqdm
     from tabulate import tabulate
@@ -365,8 +364,7 @@ class Decompressor(torch.nn.Module):
             dtype=self.codec.dtype,
             device=self.codec.device,
         )
-        #                                                              Inverse binning happens here.
-        coefficientss[..., compressed_tensor.mask] = compressed_tensor.coefficientss
+        coefficientss[..., compressed_tensor.mask] = compressed_tensor.specified_coefficientss()
 
         unblocked = self.block_inverse(self.codec.blockwise_transform(coefficientss, inverse=True))
         del coefficientss

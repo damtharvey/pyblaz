@@ -46,7 +46,9 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
 
     for error in ("absolute_error", "relative_error"):
         for metric in ("mean", "variance", "norm_2", "structural_similarity"):
-            with tqdm.tqdm(total=len(index_types) * len(block_shapes) * len(float_types), desc=f"{error} {metric}") as progress_bar:
+            with tqdm.tqdm(
+                total=len(index_types) * len(block_shapes) * len(float_types), desc=f"{error} {metric}"
+            ) as progress_bar:
                 plt.clf()
 
                 figure = plt.figure(figsize=figure_shape)
@@ -96,7 +98,7 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
                                 selected_error,
                                 s=4,
                                 color=color,
-                                alpha=0.05 if metric != "structural_similarity" else 0.05 ** 2,
+                                alpha=0.05 if metric != "structural_similarity" else 0.05**2,
                             )
 
                             progress_bar.update()
@@ -116,7 +118,7 @@ def plot_errors(block_shapes, colors, index_type_markers, index_types, results_p
                             s=50,
                             color="black",
                         )
-                        
+
                         axis.scatter(
                             horizontal_values + block_shape_offset + index_type_offset,
                             error_means,
