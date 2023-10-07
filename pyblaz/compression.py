@@ -5,8 +5,8 @@ import torch
 import torch.nn
 import torch.nn.functional
 
-import transforms
-from compressed import CompressedTensor, INDICES_RADIUS
+import pyblaz.transforms
+from pyblaz.compressed import CompressedTensor, INDICES_RADIUS
 
 
 def _test():
@@ -170,14 +170,14 @@ class PyBlaz:
     From communication with the author, instead of binning followed by orthogonal transform,
     later versions featured orthogonal transform followed by binning, which is what we implement here.
 
-    We also make the normalize step optional and off by default.
+    We skip the normalize step.
     By skipping it, compressed space linear operations are facilitated.
     """
 
     def __init__(
         self,
         block_shape: tuple[int, ...] = (8, 8),
-        transform: callable = transforms.cosine,
+        transform: callable = pyblaz.transforms.cosine,
         dtype: torch.dtype = torch.float32,
         index_dtype: torch.dtype = torch.int8,
         mask: torch.Tensor = None,
@@ -214,8 +214,6 @@ class PyBlaz:
 
     def blockwise_transform(self, blocked_tensor: torch.Tensor, inverse=False) -> torch.Tensor:
         """
-        Section II.d
-
         Transform the blocked tensor blockwise according to self.block_shape.
 
         :param blocked_tensor:
@@ -304,8 +302,8 @@ class Compressor(torch.nn.Module):
 
     def block(self, unblocked: torch.Tensor) -> torch.Tensor:
         """
-        Section II.a
         Block Splitting
+
         :param unblocked: uncompressed tensor
         :return: tensor of shape blocks' shape followed by block shape.
         """

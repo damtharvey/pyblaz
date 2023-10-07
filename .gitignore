@@ -1,6 +1,9 @@
 /data/MNIST
+/data/lgg-mri-segmentation/
+/dist/
 /__pycache__/
+/pyblaz/__pycache__/
+/pyblaz/pyblaz.egg-info/
 /temp/
 /.idea/
 /.vscode/
-/data/lgg-mri-segmentation/

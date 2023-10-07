@@ -1,3 +1,7 @@
 PyBlaz code should be in Black style with 120 character maximum line length.
+The easiest way to do this is to
+    pip install black
+and say after every change
+    black . -l 120
 
 We tend to name things whole real words.

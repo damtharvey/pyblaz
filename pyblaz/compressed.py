@@ -130,6 +130,12 @@ class CompressedTensor:
         """
         return self * other
 
+    def __truediv__(self, other):
+        if isinstance(other, (float, int)) or (isinstance(other, torch.Tensor) and other.numel() == 1):
+            return self * (1 / other)
+        else:
+            raise TypeError(f"Division not defined between {type(self)} and {type(other)}.")
+
     def dot(self, other) -> float:
         """
         :returns: the dot product of this tensor with another compressed tensor.
