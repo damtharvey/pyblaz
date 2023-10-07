@@ -1,6 +1,0 @@
-Metadata-Version: 2.1
-Name: pyblaz
-Version: 0.0.1
-Summary: Arbitrary-dimensional, floating-point array compressor that supports transformations of compressed arrays.
-Home-page: https://github.com/damtharvey/pyblaz
-Requires-Python: >=3.11

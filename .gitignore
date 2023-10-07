@@ -4,6 +4,7 @@
 /__pycache__/
 /pyblaz/__pycache__/
 /pyblaz/pyblaz.egg-info/
+/pyblaz.egg-info/
 /temp/
 /.idea/
 /.vscode/
