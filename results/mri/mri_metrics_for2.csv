@@ -1,6 +1,0 @@
-original_shape,float_type,index_type,block_shape,keep_proportion,metric,error
-23×256×256,23×256×256float32,int8,8×8×8,1,
-diff,1.014919400215149
-norm_2,241.46560668945312
-cosine similarity,0.5321056246757507
-structural_similarity-0.011889934539794922
