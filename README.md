@@ -24,3 +24,27 @@ normalized_x = codec.decompress((compressed_x - compressed_x.mean()) / compresse
 
 print(normalized_x.mean().item(), normalized_x.std(correction=0).item())
 ```
+
+# Funding Acknowledgement
+This software was developed under the auspices of funding
+under NSF 2217154, "Collaborative Research: PPoSS: Large: A comprehensive framework for efficient, scalable, and performance-portable tensor applications". 
+
+# Citation
+```
+@inproceedings{10.1145/3624062.3625122,
+author = {Agarwal, Tripti and Dam, Harvey and Sadayappan, Ponnuswamy and Gopalakrishnan, Ganesh and Khalifa, Dorra Ben and Martel, Matthieu},
+title = {What Operations can be Performed Directly on Compressed Arrays, and with What Error?},
+year = {2023},
+isbn = {9798400707858},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3624062.3625122},
+doi = {10.1145/3624062.3625122},
+booktitle = {Proceedings of the SC '23 Workshops of The International Conference on High Performance Computing, Network, Storage, and Analysis},
+pages = {254–262},
+numpages = {9},
+keywords = {arrays, data compression, floating-point arithmetic, high-performance computing, parallel computing, tensors},
+location = {Denver, CO, USA},
+series = {SC-W '23}
+}
+```
