@@ -1,35 +1,80 @@
-# Dependencies
+# PyBlaz
 
-Install PyTorch >=2.0. Go to https://pytorch.org/get-started and select your installation configuration from the table. Then copy the provided command and run it.
+PyBlaz is an experimental tensor compression library that allows direct operations on compressed tensors without decompression. The library enables efficient computation with decreased memory requirements.
 
-# Installation
+## Dependencies
+
+Install PyTorch >=2.0.0. Go to https://pytorch.org/get-started and select your installation configuration from the table. Then copy the provided command and run it.
+
+## Installation
 
 ```bash
 pip install -e .
 ```
 
-# Example Usage
+For development, install additional dependencies:
+
+```bash
+pip install -e ".[dev]"
+```
+
+## Example Usage
 
 ```python
 import torch
 from pyblaz.compression import PyBlaz
 
-
+# Create a compressor with desired block shape and settings
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-codec = PyBlaz(block_shape=(4, 4), dtype=torch.float32, index_dtype=torch.int8, device=device)
+codec = PyBlaz(
+    block_shape=(4, 4),
+    dtype=torch.float32,
+    index_dtype=torch.int8,
+    device=device
+)
 
+# Create sample data
 x = torch.randn(8, 8, device=device) * 2 + 3
-compressed_x = codec.compress(x)
-normalized_x = codec.decompress((compressed_x - compressed_x.mean()) / compressed_x.standard_deviation())
 
-print(normalized_x.mean().item(), normalized_x.std(correction=0).item())
+# Compress the tensor
+compressed_x = codec.compress(x)
+
+# Perform operations directly on compressed tensor
+normalized_x = codec.decompress(
+    (compressed_x - compressed_x.mean()) / compressed_x.standard_deviation()
+)
+
+print(f"Mean: {normalized_x.mean().item():.6f}, Std: {normalized_x.std(correction=0).item():.6f}")
 ```
 
-# Funding Acknowledgement
+## Supported Operations
+
+PyBlaz supports the following operations directly on compressed tensors:
+
+- Basic arithmetic: addition, subtraction, multiplication by scalars, division by scalars
+- Statistical operations: mean, variance, standard deviation, covariance
+- Distance metrics: dot product, L2 norm, cosine similarity
+- Advanced operations: structural similarity
+
+## Running Tests
+
+To run compression benchmarks:
+
+```bash
+python tests/test_compression.py --dimensions 2 --block-size 8 --max-size 256
+```
+
+To visualize the transforms:
+
+```bash
+python tests/test_transforms.py
+```
+
+## Funding Acknowledgement
 This software was developed under the auspices of funding
 under NSF 2217154, "Collaborative Research: PPoSS: Large: A comprehensive framework for efficient, scalable, and performance-portable tensor applications". 
 
-# Citation
+## Citation
 ```
 @inproceedings{10.1145/3624062.3625122,
 author = {Agarwal, Tripti and Dam, Harvey and Sadayappan, Ponnuswamy and Gopalakrishnan, Ganesh and Khalifa, Dorra Ben and Martel, Matthieu},

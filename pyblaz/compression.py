@@ -5,184 +5,47 @@ import torch
 import torch.nn
 import torch.nn.functional
 
-import pyblaz.transforms
+from pyblaz.transforms import cosine
 from pyblaz.compressed import CompressedTensor, INDICES_RADIUS
-
-
-def _test():
-    import argparse
-    import time
-    import tqdm
-    from tabulate import tabulate
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dimensions", type=int, default=3)
-    parser.add_argument("--block-size", type=int, default=8, help="size of a hypercubic block")
-    parser.add_argument("--max-size", type=int, default=512)
-    parser.add_argument(
-        "--dtype",
-        type=str,
-        default="float32",
-        choices=(
-            dtypes := {
-                "bfloat16": torch.bfloat16,
-                "float16": torch.float16,
-                "float32": torch.float32,
-                "float64": torch.float64,
-            }
-        ),
-    )
-    parser.add_argument(
-        "--index-dtype",
-        type=str,
-        default="int16",
-        choices=(index_dtypes := {"int8": torch.int8, "int16": torch.int16}),
-    )
-    args = parser.parse_args()
-
-    dtype = dtypes[args.dtype]
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    block_shape = (args.block_size,) * args.dimensions
-
-    # n_coefficients = int(math.prod(block_shape) * 0.5)
-    # mask = torch.zeros(block_shape, dtype=torch.bool)
-    # for index in sorted(
-    #     itertools.product(*(range(size) for size in block_shape)),
-    #     key=lambda coordinates: sum(coordinates),
-    # )[:n_coefficients]:
-    #     mask[index] = True
-
-    compressor = PyBlaz(
-        block_shape=block_shape,
-        dtype=dtype,
-        index_dtype=index_dtypes[args.index_dtype],
-        # mask=mask,
-        device=device,
-    )
-
-    time_table = []
-    error_table = []
-    headers = (
-        "size",
-        "codec",
-        "negate",
-        "add",
-        "add_scalar",
-        "multiply",
-        "dot",
-        "norm2",
-        "mean",
-        "variance",
-        "cosine",
-        "covariance",
-    )
-
-    for size in tqdm.tqdm(
-        tuple(1 << p for p in range(args.block_size.bit_length() - 1, args.max_size.bit_length())),
-        desc=f"{args.dimensions}D",
-    ):
-        size += 1
-        time_results = [size]
-        error_results = [size]
-
-        x = torch.randn((size,) * args.dimensions, dtype=dtype, device=device) - 1
-        y = torch.randn((size,) * args.dimensions, dtype=dtype, device=device) + 2
-
-        # compress
-        start_time = time.time()
-        compressed_x = compressor.compress(x)
-        compressed_y = compressor.compress(y)
-        time_results.append(time.time() - start_time)
-
-        # compressed negate
-        start_time = time.time()
-        r = -compressed_x
-        time_results.append(time.time() - start_time)
-        error_results.append((compressor.decompress(r) + x).norm(torch.inf))
-
-        # compressed add
-        start_time = time.time()
-        r = compressed_x + compressed_y
-        time_results.append(time.time() - start_time)
-        error_results.append((compressor.decompress(r) - (x + y)).norm(torch.inf))
-
-        # compressed add scalar
-        start_time = time.time()
-        r = compressed_x + 3.14159
-        time_results.append(time.time() - start_time)
-        error_results.append((compressor.decompress(r) - (x + 3.14159)).norm(torch.inf))
-
-        # compressed multiply
-        start_time = time.time()
-        r = compressed_x * 3.14159
-        time_results.append(time.time() - start_time)
-        error_results.append((compressor.decompress(r) - (x * 3.14159)).norm(torch.inf))
-
-        # compressed dot
-        start_time = time.time()
-        r = compressed_x.dot(compressed_y)
-        time_results.append(time.time() - start_time)
-        error_results.append(abs((r - (x * y).sum())))
-
-        # compressed norm2
-        start_time = time.time()
-        r = compressed_x.norm_2()
-        time_results.append(time.time() - start_time)
-        error_results.append(abs(r - x.norm(2)))
-
-        # compressed mean
-        start_time = time.time()
-        r = compressed_x.mean()
-        time_results.append(time.time() - start_time)
-        error_results.append(abs(r - x.mean()))
-
-        # compressed variance
-        start_time = time.time()
-        r = compressed_x.variance()
-        time_results.append(time.time() - start_time)
-        error_results.append(abs(r - x.var(unbiased=False)))
-
-        # compressed cosine similarity
-        start_time = time.time()
-        r = compressed_x.cosine_similarity(compressed_y)
-        time_results.append(time.time() - start_time)
-        error_results.append(abs(r - (x * y).sum() / (x.norm(2) * y.norm(2))))
-
-        # compressed covariance
-        start_time = time.time()
-        r = compressed_x.covariance(compressed_y)
-        time_results.append(time.time() - start_time)
-        error_results.append(abs(r - ((x - x.mean()) * (y - y.mean())).mean()))
-
-        time_table.append(time_results)
-        error_table.append(error_results)
-
-    print("\ntime\n" + tabulate(time_table, headers=headers))
-
-    print("\nerror\n" + tabulate(error_table, headers=headers))
 
 
 class PyBlaz:
     """
-    compressor inspired by https://arxiv.org/abs/2202.13007
+    Compressor inspired by https://arxiv.org/abs/2202.13007
 
     From communication with the author, instead of binning followed by orthogonal transform,
     later versions featured orthogonal transform followed by binning, which is what we implement here.
 
-    We skip the normalize step.
-    By skipping it, compressed space linear operations are facilitated.
+    We skip the normalize step. By skipping it, compressed space linear operations are facilitated.
+    This allows direct operations on compressed tensors without needing to decompress first.
+
+    Parameters
+    ----------
+    block_shape : tuple[int, ...]
+        The shape of blocks to divide the tensor into for compression.
+    transform : callable
+        The transform function to use for compression. Default is cosine transform.
+    dtype : torch.dtype
+        The data type to use for the basis coefficients.
+    index_dtype : torch.dtype
+        The integer type to use for indices. Determines the precision of compression.
+    mask : torch.Tensor, optional
+        Boolean mask indicating which coefficients to keep. If None, all are kept.
+    device : torch.device
+        The device to perform computation on.
+    transform_tensor_directory : pathlib.Path
+        Directory to cache transform tensors for faster loading.
     """
 
     def __init__(
         self,
         block_shape: tuple[int, ...] = (8, 8),
-        transform: callable = pyblaz.transforms.cosine,
+        transform: callable = cosine,
         dtype: torch.dtype = torch.float32,
         index_dtype: torch.dtype = torch.int8,
         mask: torch.Tensor = None,
         device: torch.device = torch.device("cuda"),
-        transform_tensor_directory: pathlib.Path = pathlib.Path("temp") / "transform_tensors",
+        transform_tensor_directory: pathlib.Path = pathlib.Path.home() / ".cache" / "pyblaz" / "transform_tensors",
         *args,
         **kwargs,
     ):

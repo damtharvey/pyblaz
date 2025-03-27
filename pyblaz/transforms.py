@@ -1,17 +1,25 @@
 import math
 
 
-def _test():
-    pass
-
-
 def cosine(block_size: int, element: int, frequency: int, inverse: bool = False) -> float:
     """
-    :param block_size: The number of elements in the vector you want to transform.
-    :param element: Index of the basis vector component to get.
-    :param frequency: Index of the basis vector to use.
-    :param inverse: Whether to return the element from the inverse transform matrix.
-    :return: The (element, frequency)th element of the discrete cosine transform matrix.
+    Computes a component of the discrete cosine transform matrix.
+    
+    Parameters
+    ----------
+    block_size : int
+        The number of elements in the vector you want to transform.
+    element : int
+        Index of the basis vector component to get.
+    frequency : int
+        Index of the basis vector to use.
+    inverse : bool, optional
+        Whether to return the element from the inverse transform matrix.
+        
+    Returns
+    -------
+    float
+        The (element, frequency)th element of the discrete cosine transform matrix.
     """
     if inverse:
         element, frequency = frequency, element
@@ -22,11 +30,23 @@ def cosine(block_size: int, element: int, frequency: int, inverse: bool = False)
 
 def haar(block_size: int, point: float, order: int, inverse: bool = False) -> float:
     """
-    :param block_size: The number of elements in the vector you want to transform.
-    :param point: Point / block size of the Haar function to sample.
-    :param order: Order of the Haar function.
-    :param inverse: Whether to return the element from the inverse transform matrix.
-    :return: Haar function evaluated at the point / block size.
+    Computes a component of the Haar wavelet transform matrix.
+    
+    Parameters
+    ----------
+    block_size : int
+        The number of elements in the vector you want to transform.
+    point : float
+        Point / block size of the Haar function to sample.
+    order : int
+        Order of the Haar function.
+    inverse : bool, optional
+        Whether to return the element from the inverse transform matrix.
+        
+    Returns
+    -------
+    float
+        Haar function evaluated at the point / block size.
     """
     if inverse:
         point, order = order, point
