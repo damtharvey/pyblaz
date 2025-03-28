@@ -50,8 +50,6 @@ print(f"Mean: {normalized_x.mean().item():.6f}, Std: {normalized_x.std(correctio
 
 ## Injecting NaNs and Infs
 
-PyBlaz supports tensors containing NaN and Inf values. Here are examples of how to inject them:
-
 ```python
 import torch
 from pyblaz.compression import PyBlaz
@@ -91,8 +89,6 @@ decompressed_x = codec.decompress(compressed_x)
 ```
 
 ## Generating NaNs and Infs through Extreme Values
-
-You can also generate NaNs and Infs through mathematical operations with extreme values:
 
 ```python
 import torch
