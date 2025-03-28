@@ -47,6 +47,36 @@ normalized_x = codec.decompress(
 print(f"Mean: {normalized_x.mean().item():.6f}, Std: {normalized_x.std(correction=0).item():.6f}")
 ```
 
+## Compute Modes
+
+PyBlaz supports different compute modes for optimized performance:
+
+### Standard FP32 Mode
+```python
+codec = PyBlaz(
+    block_shape=(16, 16),
+    dtype=torch.float32,
+    device=torch.device("cuda"),
+    compute_mode="fp32"  # Default mode
+)
+```
+
+### TensorFloat32 (TF32) Mode
+On NVIDIA Ampere+ GPUs, you can use TF32 for faster matrix operations:
+```python
+codec = PyBlaz(
+    block_shape=(16, 16),
+    dtype=torch.float32,  # Required for TF32 mode
+    device=torch.device("cuda"),
+    compute_mode="tf32"  # Use TF32 for faster matrix operations
+)
+```
+
+TF32 provides significant speedups with minimal precision loss. Note that TF32 mode requires `dtype=torch.float32`. To benchmark the performance:
+```bash
+python tests/benchmark_tf32.py --dimensions 2 --size 1024 --block-size 8
+```
+
 ## Supported Operations
 
 PyBlaz supports the following operations directly on compressed tensors:
