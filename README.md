@@ -90,7 +90,7 @@ compressed_x = codec.compress(x)
 decompressed_x = codec.decompress(compressed_x)
 ```
 
-### Generating NaNs and Infs through Extreme Values
+## Generating NaNs and Infs through Extreme Values
 
 You can also generate NaNs and Infs through mathematical operations with extreme values:
 
