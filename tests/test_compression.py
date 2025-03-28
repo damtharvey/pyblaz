@@ -128,41 +128,39 @@ def benchmark_compression():
         start_time = time.time()
         r = compressed_x.variance()
         time_results.append(time.time() - start_time)
-        error_results.append(abs(r - x.var(unbiased=False)))
+        error_results.append(abs(r - x.var()))
 
         # compressed cosine similarity
         start_time = time.time()
         r = compressed_x.cosine_similarity(compressed_y)
         time_results.append(time.time() - start_time)
-        error_results.append(abs(r - (x * y).sum() / (x.norm(2) * y.norm(2))))
+        error_results.append(abs(r - torch.nn.functional.cosine_similarity(x.flatten(), y.flatten(), 0)))
 
         # compressed covariance
         start_time = time.time()
         r = compressed_x.covariance(compressed_y)
         time_results.append(time.time() - start_time)
-        error_results.append(abs(r - ((x - x.mean()) * (y - y.mean())).mean()))
+        error_results.append(abs(r - torch.cov(torch.stack([x.flatten(), y.flatten()]))[0, 1]))
 
         time_table.append(time_results)
         error_table.append(error_results)
 
-    # Print time results
-    print("\nTime Results:")
     print("=" * 100)
-    print(" | ".join(f"{h:>10}" for h in headers))
+    print("Time (s)")
+    print("=" * 100)
+    print(*headers, sep="\t")
     print("-" * 100)
     for row in time_table:
-        print(" | ".join(f"{x:>10.6f}" if isinstance(x, float) else f"{x:>10}" for x in row))
+        print(*row, sep="\t")
     print("=" * 100)
-
-    # Print error results
-    print("\nError Results:")
+    print("Error")
     print("=" * 100)
-    print(" | ".join(f"{h:>10}" for h in headers))
+    print(*headers, sep="\t")
     print("-" * 100)
     for row in error_table:
-        print(" | ".join(f"{x:>10.6f}" if isinstance(x, float) else f"{x:>10}" for x in row))
+        print(*row, sep="\t")
     print("=" * 100)
 
 
 if __name__ == "__main__":
-    benchmark_compression() 
+    benchmark_compression()

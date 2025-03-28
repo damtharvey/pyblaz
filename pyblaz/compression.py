@@ -73,26 +73,34 @@ class PyBlaz:
         self.inverse_transformer_tensor = None
 
         # Configure compute mode settings
-        if compute_mode == "tf32" and torch.cuda.is_available() and device.type == 'cuda':
+        if compute_mode == "tf32" and torch.cuda.is_available() and device.type == "cuda":
             if dtype != torch.float32:
                 raise ValueError("TF32 compute mode can only be used with torch.float32 dtype")
             # Enable TF32 for matrix multiplications (available on Ampere+ GPUs)
             torch.backends.cuda.matmul.allow_tf32 = True
             # Enable TF32 for cuDNN operations
             torch.backends.cudnn.allow_tf32 = True
-            if hasattr(torch, 'amp') and hasattr(torch.amp, 'autocast'):
-                self.autocast_context = lambda: torch.amp.autocast('cuda', dtype=dtype)
+            if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+                self.autocast_context = lambda: torch.amp.autocast("cuda", dtype=dtype)
             else:
                 # Fallback to a no-op context manager
                 class NoOpContext:
-                    def __enter__(self): return None
-                    def __exit__(self, *args): return None
+                    def __enter__(self):
+                        return None
+
+                    def __exit__(self, *args):
+                        return None
+
                 self.autocast_context = lambda: NoOpContext()
         else:
             # If TF32 not requested or not supported, use a no-op context manager
             class NoOpContext:
-                def __enter__(self): return None
-                def __exit__(self, *args): return None
+                def __enter__(self):
+                    return None
+
+                def __exit__(self, *args):
+                    return None
+
             self.autocast_context = lambda: NoOpContext()
 
         self.compressor = Compressor(self, *args, **kwargs)
@@ -114,7 +122,7 @@ class PyBlaz:
             Tensor to transform in blocked form.
         inverse : bool, optional
             Whether to apply the inverse transform.
-            
+
         Returns
         -------
         torch.Tensor
@@ -170,7 +178,7 @@ class PyBlaz:
                 # blocks, coefficients
                 tuple(range(self.n_dimensions)) + tuple(range(2 * self.n_dimensions, 3 * self.n_dimensions)),
             )
-        
+
         return result
 
 
@@ -192,7 +200,7 @@ class Compressor(torch.nn.Module):
         ----------
         tensor : torch.Tensor
             Uncompressed tensor to compress.
-            
+
         Returns
         -------
         CompressedTensor
@@ -204,11 +212,11 @@ class Compressor(torch.nn.Module):
         )
 
         blocked = self.block(tensor.to(self.codec.dtype).to(self.codec.device))
-        
+
         # If there is pruning, it is faster to calculate all coefficients and then drop some.
         # Use TF32 acceleration for the blockwise transform if enabled
         coefficientss = self.codec.blockwise_transform(blocked)[..., self.codec.mask]
-            
+
         del blocked
         indicess, biggest_coefficients = self.bin(coefficientss)
         del coefficientss
@@ -266,12 +274,12 @@ class Decompressor(torch.nn.Module):
     def forward(self, compressed_tensor):
         """
         Decompress a compressed tensor back to its original form.
-        
+
         Parameters
         ----------
         compressed_tensor : CompressedTensor
             The compressed tensor to decompress.
-            
+
         Returns
         -------
         torch.Tensor

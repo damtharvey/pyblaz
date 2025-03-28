@@ -4,7 +4,7 @@ import math
 def cosine(block_size: int, element: int, frequency: int, inverse: bool = False) -> float:
     """
     Computes a component of the discrete cosine transform matrix.
-    
+
     Parameters
     ----------
     block_size : int
@@ -15,7 +15,7 @@ def cosine(block_size: int, element: int, frequency: int, inverse: bool = False)
         Index of the basis vector to use.
     inverse : bool, optional
         Whether to return the element from the inverse transform matrix.
-        
+
     Returns
     -------
     float
@@ -31,7 +31,7 @@ def cosine(block_size: int, element: int, frequency: int, inverse: bool = False)
 def haar(block_size: int, point: float, order: int, inverse: bool = False) -> float:
     """
     Computes a component of the Haar wavelet transform matrix.
-    
+
     Parameters
     ----------
     block_size : int
@@ -42,7 +42,7 @@ def haar(block_size: int, point: float, order: int, inverse: bool = False) -> fl
         Order of the Haar function.
     inverse : bool, optional
         Whether to return the element from the inverse transform matrix.
-        
+
     Returns
     -------
     float

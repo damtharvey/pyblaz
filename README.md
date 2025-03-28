@@ -30,7 +30,8 @@ codec = PyBlaz(
     block_shape=(4, 4),
     dtype=torch.float32,
     index_dtype=torch.int8,
-    device=device
+    device=device,
+    compute_mode="tf32"  # Use TF32 for faster matrix operations
 )
 
 # Create sample data
@@ -47,6 +48,74 @@ normalized_x = codec.decompress(
 print(f"Mean: {normalized_x.mean().item():.6f}, Std: {normalized_x.std(correction=0).item():.6f}")
 ```
 
+## Injecting NaNs and Infs
+
+PyBlaz supports tensors containing NaN and Inf values. Here are examples of how to inject them:
+
+```python
+import torch
+from pyblaz.compression import PyBlaz
+
+# Create a compressor
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+codec = PyBlaz(
+    block_shape=(4, 4),
+    dtype=torch.float32,
+    device=device,
+    compute_mode="tf32"
+)
+
+# Create a tensor
+x = torch.randn(8, 8, device=device)
+
+# Inject NaN at a specific position
+x[2, 3] = torch.nan
+
+# Inject Inf at a specific position
+x[4, 5] = torch.inf
+
+# Inject -Inf at a specific position
+x[6, 7] = -torch.inf
+
+# Inject NaN at a random position
+random_idx = torch.randint(0, x.numel(), (1,))[0]
+x.view(-1)[random_idx] = torch.nan
+
+# Inject Inf at a random position
+random_idx = torch.randint(0, x.numel(), (1,))[0]
+x.view(-1)[random_idx] = torch.inf
+
+# Compress and decompress
+compressed_x = codec.compress(x)
+decompressed_x = codec.decompress(compressed_x)
+```
+
+### Generating NaNs and Infs through Extreme Values
+
+You can also generate NaNs and Infs through mathematical operations with extreme values:
+
+```python
+import torch
+from pyblaz.compression import PyBlaz
+
+# Create a compressor
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+codec = PyBlaz(
+    block_shape=(4, 4),
+    dtype=torch.float32,
+    device=device,
+    compute_mode="tf32"  # Use TF32 for faster matrix operations
+)
+
+# Create a tensor with extreme values
+tf32_max = (2 - 2 ** -10) * (1 << 127)
+x = torch.ones(4, 4, device=device) * tf32_max
+
+# Compress and decompress
+compressed_x = codec.compress(x)
+decompressed_x = codec.decompress(compressed_x)
+```
+
 ## Compute Modes
 
 PyBlaz supports different compute modes for optimized performance:
@@ -57,18 +126,18 @@ codec = PyBlaz(
     block_shape=(16, 16),
     dtype=torch.float32,
     device=torch.device("cuda"),
-    compute_mode="fp32"  # Default mode
+    compute_mode="fp32"  # Standard mode
 )
 ```
 
 ### TensorFloat32 (TF32) Mode
-On NVIDIA Ampere+ GPUs, you can use TF32 for faster matrix operations:
+On NVIDIA Ampere+ GPUs, TF32 is the default mode for faster matrix operations:
 ```python
 codec = PyBlaz(
     block_shape=(16, 16),
-    dtype=torch.float32,  # Required for TF32 mode
+    dtype=torch.float32,
     device=torch.device("cuda"),
-    compute_mode="tf32"  # Use TF32 for faster matrix operations
+    compute_mode="tf32"  # Default mode for faster matrix operations
 )
 ```
 
@@ -122,4 +191,3 @@ keywords = {arrays, data compression, floating-point arithmetic, high-performanc
 location = {Denver, CO, USA},
 series = {SC-W '23}
 }
-```

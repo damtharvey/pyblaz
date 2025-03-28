@@ -11,7 +11,7 @@ INDICES_RADIUS = {
 class CompressedBlock:
     """
     Represents a single compressed block with a scaling factor and indices.
-    
+
     Parameters
     ----------
     biggest_coefficient : float
@@ -19,6 +19,7 @@ class CompressedBlock:
     indices : torch.Tensor
         The quantized values for the block.
     """
+
     def __init__(self, biggest_coefficient: float, indices: torch.Tensor):
         self.biggest_coefficient = biggest_coefficient
         self.indices = indices
@@ -27,10 +28,10 @@ class CompressedBlock:
 class CompressedTensor:
     """
     A tensor in compressed form that supports direct operations without decompression.
-    
+
     This class provides methods to perform operations on compressed tensors like
     addition, subtraction, multiplication, and statistical operations.
-    
+
     Parameters
     ----------
     original_shape : tuple[int, ...]
@@ -42,6 +43,7 @@ class CompressedTensor:
     mask : torch.Tensor, optional
         Boolean mask indicating which coefficients to keep.
     """
+
     def __init__(
         self,
         original_shape: tuple[int, ...],
