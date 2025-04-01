@@ -40,6 +40,9 @@ class PyBlaz:
         - "fp32": Standard FP32 computation (default)
         - "tf32": Use TensorFloat32 for faster matrix operations on NVIDIA Ampere+ GPUs.
                  Requires dtype=torch.float32.
+    compile : bool, optional
+        Whether to compile the compression and decompression functions using torch.compile.
+        Default is False.
     """
 
     def __init__(
@@ -52,6 +55,7 @@ class PyBlaz:
         device: torch.device = torch.device("cuda"),
         transform_tensor_directory: pathlib.Path = pathlib.Path.home() / ".cache" / "pyblaz" / "transform_tensors",
         compute_mode: str = "fp32",
+        compile: bool = False,
         *args,
         **kwargs,
     ):
@@ -80,8 +84,8 @@ class PyBlaz:
             torch.backends.cuda.matmul.allow_tf32 = True
             # Enable TF32 for cuDNN operations
             torch.backends.cudnn.allow_tf32 = True
-            if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
-                self.autocast_context = lambda: torch.amp.autocast("cuda", dtype=dtype)
+            if hasattr(torch, "autocast"):
+                self.autocast_context = lambda: torch.autocast("cuda", dtype=dtype)
             else:
                 # Fallback to a no-op context manager
                 class NoOpContext:
@@ -106,11 +110,25 @@ class PyBlaz:
         self.compressor = Compressor(self, *args, **kwargs)
         self.decompressor = Decompressor(self, *args, **kwargs)
 
+        # Compile if requested
+        if compile:
+            if not torch.cuda.is_available():
+                raise ValueError("Compilation requires CUDA to be available")
+            self._compress = torch.compile(self.compress)
+            self._decompress = torch.compile(self.decompress)
+        else:
+            self._compress = self.compress
+            self._decompress = self.decompress
+
     def compress(self, tensor: torch.Tensor) -> CompressedTensor:
         return self.compressor(tensor)
 
     def decompress(self, compressed_tensor: CompressedTensor) -> torch.Tensor:
         return self.decompressor(compressed_tensor)
+
+    def __call__(self, tensor: torch.Tensor) -> CompressedTensor:
+        """Alias for compress to make the class callable."""
+        return self._compress(tensor)
 
     def blockwise_transform(self, blocked_tensor: torch.Tensor, inverse=False) -> torch.Tensor:
         """

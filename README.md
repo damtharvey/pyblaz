@@ -142,6 +142,45 @@ TF32 provides significant speedups with minimal precision loss. Note that TF32 m
 python tests/benchmark_tf32.py --dimensions 2 --size 1024 --block-size 8
 ```
 
+### Using PyTorch Compilation
+
+PyBlaz supports PyTorch's `torch.compile()` for additional performance improvements. To use compilation:
+
+```python
+import torch
+from pyblaz.compression import PyBlaz
+
+# Enable TF32 for best performance (optional)
+torch.set_float32_matmul_precision('high')
+
+# Create a compressor with compilation enabled
+device = torch.device("cuda")
+codec = PyBlaz(
+    block_shape=(8, 8),
+    dtype=torch.float32,
+    device=device,
+    compute_mode="tf32",  # Optional: Enable TF32 for even better performance
+    compile=True  # Enable compilation
+)
+
+# Use the compiled functions
+x = torch.randn(64, 64, device=device)
+compressed = codec(x)  # or codec.compress(x)
+decompressed = codec._decompress(compressed)  # or codec.decompress(compressed)
+```
+
+Compilation provides several benefits:
+- Faster execution through optimized kernels
+- Reduced overhead in repeated operations
+- Better utilization of hardware capabilities
+
+To benchmark the compilation speedup:
+```bash
+python tests/test_compile_speed.py
+```
+
+Note: The first run includes compilation overhead, but subsequent runs will be faster.
+
 ## Supported Operations
 
 PyBlaz supports the following operations directly on compressed tensors:
